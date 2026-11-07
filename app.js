@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { WAREHOUSES, SAUNA_GROUPS } from './items.js';
 import { setupAdmin } from './admin.js';
 
-const APP_VER = '2026.11.07-2';
+const APP_VER = '2026.11.07-3';
 // 관리자 = 보안 규칙 isAdmin 과 같은 목록 (UID 는 공개돼도 되는 값)
 const ADMINS = [
   { uid: 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', label: '부소장', email: 'unieshaeundae+sub@gmail.com' },
@@ -79,11 +79,13 @@ function watchCounts() {
 }
 
 // 숫자 저장: 줄을 쌓기만 함 (고치기·지우기 없음 — 마지막 줄이 지금 값)
+// qty = null 은 '지움'(안 셈으로 되돌림) — 0 에서 − 를 한 번 더 누르거나 칸을 비울 때 (11/7)
 function saveQty(id) {
   const r = openRound(); const q = drafts[id];
   delete timers[id];
   if (!r || q === undefined) return;
-  if (cnt[id] && cnt[id].qty === q) { delete drafts[id]; drawItem(id); return; }
+  const cur = cnt[id] ? cnt[id].qty : null;
+  if (cur === q) { delete drafts[id]; drawItem(id); drawHead(); return; }
   const w = S.add('inv_counts', { round: r.id, part, item: id, qty: q, by: name, at: S.SERVER_TIME, clientAt: new Date(), uid: user.uid });
   w.done.then(() => { drawSync(); }).catch(e => {
     failed++; report('저장', id + ' ' + (e && e.code || '') + ' ' + (e && e.message || e));
@@ -91,7 +93,7 @@ function saveQty(id) {
   });
 }
 function setDraft(id, q) {
-  q = Math.max(0, Math.min(100000, Math.round(q)));
+  if (q !== null) q = Math.max(0, Math.min(100000, Math.round(q)));
   drafts[id] = q; clearTimeout(timers[id]);
   timers[id] = setTimeout(() => saveQty(id), 700);
   drawItem(id); drawHead();
@@ -142,8 +144,8 @@ function homeV(m) {
     '<p class="hint">· 숫자를 넣으면 바로 휴대폰에 저장돼요.<br>· 인터넷이 끊겨도 괜찮아요. 연결되면 자동으로 보내요.</p>' + adminLink();
 }
 function prog(list) { return [list.filter(x => has(x.id)).length, list.length]; }
-function has(id) { return drafts[id] !== undefined || (cnt[id] && cnt[id].qty !== undefined); }
-function valOf(id) { return drafts[id] !== undefined ? drafts[id] : cnt[id] ? cnt[id].qty : ''; }
+function has(id) { const v = valOf(id); return v !== ''; }
+function valOf(id) { const v = drafts[id] !== undefined ? drafts[id] : cnt[id] ? cnt[id].qty : null; return v === null || v === undefined ? '' : v; }
 function bar(d, t) { return '<div class="meter"><i class="' + (t && d === t ? 'full' : '') + '" style="width:' + (t ? d / t * 100 : 0) + '%"></i></div>'; }
 function whV(m) {
   const all = live('객실'); const [d, t] = prog(all);
@@ -172,9 +174,10 @@ function drawHead() {
   h.innerHTML = '<div class="row"><b>입력 <span class="num">' + d + ' / ' + t + '</span></b><span class="pill ' + (d === t ? 'ok' : '') + '">' + (d === t ? '다 셌음' : '남은 ' + (t - d) + '개') + '</span></div>' + bar(d, t);
 }
 function itemState(id) {
-  if (drafts[id] !== undefined) return '<span class="stt wait">입력 중…</span>';
+  if (drafts[id] !== undefined) return '<span class="stt wait">' + (drafts[id] === null ? '지우는 중…' : '입력 중…') + '</span>';
   const c = cnt[id]; if (!c) return '';
   if (c.pending) return '<span class="stt wait">휴대폰에 보관됨 · 보내는 중</span>';
+  if (c.qty === null || c.qty === undefined) return '<span class="stt">안 셈으로 되돌림</span>';
   return '<span class="stt ok">✓ 저장됨 ' + hm(c.t) + (c.by && c.by !== name ? ' · ' + esc(c.by) : '') + '</span>';
 }
 function itemV(x) {
@@ -263,7 +266,11 @@ document.addEventListener('click', e => {
   if (d.go) { flushAll(); screen = d.go; filter = 'all'; if (d.go === 'home') part = null; update(); window.scrollTo(0, 0); return; }
   if (d.wh !== undefined) { wh = d.wh; screen = 'count'; filter = 'all'; render(); window.scrollTo(0, 0); return; }
   if (d.f) { filter = d.f; render(); return; }
-  if (d.d) { const id = d.id, cur = valOf(id); setDraft(id, (cur === '' ? 0 : +cur) + (+d.d)); return; }
+  if (d.d) {
+    const id = d.id, cur = valOf(id);
+    if (+d.d < 0) { if (cur === '') return; if (+cur === 0) { setDraft(id, null); return; } }   // 0 에서 − → 안 셈
+    setDraft(id, (cur === '' ? 0 : +cur) + (+d.d)); return;
+  }
   if (d.finish) {
     flushAll();
     const L = part === '객실' ? live('객실') : live('사우나'); const left = L.filter(x => !has(x.id)).length;
@@ -280,8 +287,7 @@ document.addEventListener('change', e => {
   if (mode === 'admin' && isAdm) { ADM.change(i, e); return; }
   if (i.matches('input.qty')) {
     const v = i.value.replace(/[^0-9]/g, '');
-    if (v === '') { delete drafts[i.dataset.id]; clearTimeout(timers[i.dataset.id]); delete timers[i.dataset.id]; i.value = valOf(i.dataset.id); drawItem(i.dataset.id); return; }
-    setDraft(i.dataset.id, +v);
+    setDraft(i.dataset.id, v === '' ? null : +v);   // 칸을 비우면 → 안 셈
   }
   if (i.id === 'nm') { name = i.value.trim().slice(0, 20); lsSet('inv_name', name); }
 });

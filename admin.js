@@ -46,7 +46,7 @@ export function setupAdmin(ctx) {
   // 이번 회차 숫자 (마감된 회차는 마감 때 남긴 final 이 기준)
   function qty(r, id) {
     if (r && r.status === '마감' && r.final && r.final[id] !== undefined && r.final[id] !== null) return r.final[id];
-    return cnt[id] ? cnt[id].qty : undefined;
+    return cnt[id] && cnt[id].qty !== null ? cnt[id].qty : undefined;   // null = 지움(안 셈)
   }
   function carryOf(r, id) {
     if (r.carry && r.carry[id] !== undefined && r.carry[id] !== null) return { v: r.carry[id], src: '직접' };
@@ -132,7 +132,8 @@ export function setupAdmin(ctx) {
 
   // ---------- 사우나 구매신청서
   function buyDoc(r) { return (r && buys[r.id]) || {}; }
-  function rowCls(b, id) { const s = b.st && b.st[id]; if (s) return s; return b.qty && b.qty[id] ? '' : 'gray'; }
+  // 줄 색: 표시(긴급·입고 완료·미입고)한 줄만. 나머지는 흰 바탕 (11/7 사용자 요청 — 발주 0 회색 없앰)
+  function rowCls(b, id) { return (b.st && b.st[id]) || ''; }
   function buyPaper(r) {
     const b = buyDoc(r), L = live('사우나');
     let rows = L.map((x, i) => { const q = qty(r, x.id);
@@ -140,13 +141,13 @@ export function setupAdmin(ctx) {
     for (let i = L.length + 1; i <= Math.max(35, L.length + 1); i++) rows += '<tr><td class="c">' + i + '</td><td></td><td></td><td></td><td></td><td></td></tr>';
     return '<div class="paper pf"><h1>사 우 나 구 매 신 청 서</h1><div class="date">신청 일자 ' + fmtDate(b.date || r.day) + '</div>' +
       '<table><thead><tr><th style="width:36px">번호</th><th>품 명</th><th style="width:64px">현재 재고</th><th style="width:44px">단위</th><th style="width:64px">구매수량</th><th>비 고</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-      '<div class="leg"><span style="--c:#D9D9D9">발주수량 0</span><span style="--c:#FFF200">입고 완료</span><span style="--c:#FF7B7B">미입고</span><span style="--c:#92D050">긴급 요청 건</span></div></div>';
+      '<div class="leg"><span style="--c:#FFF200">입고 완료</span><span style="--c:#FF7B7B">미입고</span><span style="--c:#92D050">긴급 요청 건</span></div></div>';
   }
   function buy(r) {
     if (!r) return '';
     const b = buyDoc(r), L = live('사우나'), n = L.filter(x => b.qty && b.qty[x.id]).length;
     const sb = (id, k) => '<button data-bs="' + k + '" data-id="' + id + '" class="' + k + (b.st && b.st[id] === k ? ' on' : '') + '">' + ST[k] + '</button>';
-    return '<div class="note"><b>현재 재고는 이번 조사 숫자가 자동으로 들어가요.</b> 구매수량만 적으면 오른쪽 신청서가 바로 바뀌고, 수량이 없는 줄은 회색(발주 0)이 돼요. ' +
+    return '<div class="note"><b>현재 재고는 이번 조사 숫자가 자동으로 들어가요.</b> 구매수량만 적으면 오른쪽 신청서가 바로 바뀌어요. 줄 색은 긴급(초록) · 입고 완료(노랑) · 미입고(빨강)만, 나머지는 흰 바탕이에요. ' +
       '물건이 들어오면 \'입고 완료\'를 눌러 주세요 → 다음 달 결산의 \'당월입고\'로 자동으로 들어가요.</div>' +
       '<div class="tools"><label class="s">신청 일자 <input type="date" data-k="bdate" value="' + esc(b.date || r.day) + '"></label>' +
       '<button class="btn blue" data-print="buy">인쇄 · PDF 저장</button><button class="btn ghost" data-xls="buy">엑셀 내려받기</button><span class="s">' + n + '개 품목 신청</span></div>' +
@@ -235,7 +236,7 @@ export function setupAdmin(ctx) {
     if (d.closeRound && r) {
       const all = items().filter(x => x.use !== false), left = all.filter(x => qty(r, x.id) === undefined).length;
       if (!t.dataset.sure) { t.dataset.sure = '1'; t.textContent = left ? '안 센 품목 ' + left + '개 — 그래도 마감 (한 번 더 누르기)' : '정말 마감할까요? (한 번 더 누르기)'; t.classList.add('red'); return; }
-      const final = {}; Object.keys(cnt).forEach(k => { final[k] = cnt[k].qty; });
+      const final = {}; Object.keys(cnt).forEach(k => { if (cnt[k].qty !== null && cnt[k].qty !== undefined) final[k] = cnt[k].qty; });
       w(S.patch('inv_rounds/' + r.id, { status: '마감', final, closedAt: S.SERVER_TIME, closedBy: ctx.who() }), '마감했어요');
       return;
     }
@@ -323,7 +324,7 @@ export function setupAdmin(ctx) {
           const cls = x ? rowCls(b, x.id) : '';
           cellAll(ws, rr, rr, 2, 7, c => { if (cls) c.fill = fill(ST_FILL[cls]); }); }
         cellAll(ws, 4, 4 + n, 2, 7, (c, rr, cc) => { c.border = box; c.alignment = { horizontal: cc === 3 || cc === 7 ? 'left' : 'center', vertical: 'middle', wrapText: cc === 7 }; if (rr === 4) { c.fill = fill('EDEDED'); c.font = { bold: true }; } });
-        [['gray', '발주수량 0'], ['y', '입고 완료'], ['r', '미입고'], ['g', '긴급 요청 건']].forEach(([k, t], i) => { const c = ws.getCell('J' + (5 + i * 2)); c.value = t; c.fill = fill(ST_FILL[k]); c.border = box; c.alignment = { horizontal: 'center' }; });
+        [['y', '입고 완료'], ['r', '미입고'], ['g', '긴급 요청 건']].forEach(([k, t], i) => { const c = ws.getCell('J' + (5 + i * 2)); c.value = t; c.fill = fill(ST_FILL[k]); c.border = box; c.alignment = { horizontal: 'center' }; });
         ws.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1, printArea: 'B2:G' + (4 + n) };
         fname = '사우나 구매신청서 ' + (b.date || r.day) + '.xlsx';
       } else {

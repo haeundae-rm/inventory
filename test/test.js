@@ -85,6 +85,24 @@ const text = p => p.evaluate(() => document.body.innerText);
   ok(await waitFor(hm, () => document.activeElement && document.activeElement.classList.contains('qty') && [...document.querySelectorAll('input.qty')].indexOf(document.activeElement) === 2), 'Enter → 다음 칸으로');
   await hm.keyboard.type('7'); await hm.keyboard.press('Tab');
   ok(await waitFor(hm, () => document.querySelectorAll('.item.has').length >= 3, null, 6000), '세 품목 입력됨');
+  // 11/7 수정: ＋ 했다가 − 로 내리면 '안 셈'으로 돌아가야 함
+  const hd = () => hm.evaluate(() => document.getElementById('head').textContent.replace(/\s+/g, ' '));
+  const h0 = await hd();
+  const six = await hm.evaluate(() => document.querySelectorAll('.item')[6].id.slice(3));
+  await hm.click('#it-' + six + ' [data-d="1"]'); await hm.click('#it-' + six + ' [data-d="-1"]');
+  ok(await waitFor(hm, id => document.querySelector('#it-' + id + ' .qty').value === '0', six), '＋ → − : 0 (재고 0개로 센 것)');
+  await hm.click('#it-' + six + ' [data-d="-1"]');
+  ok(await waitFor(hm, id => document.querySelector('#it-' + id + ' .qty').value === '' && !document.querySelector('#it-' + id).classList.contains('has'), six), '0 에서 − 한 번 더 → 빈 칸 (안 셈)');
+  await sleep(1500);
+  ok((await hd()) === h0, '진행률이 원래대로 (' + h0.trim() + ')');
+  // 저장된 품목을 지우기: 칸 비우기
+  const seven = await hm.evaluate(() => document.querySelectorAll('.item')[7].id.slice(3));
+  await hm.locator('#it-' + seven + ' .qty').fill('5'); await hm.locator('#it-' + seven + ' .qty').press('Tab');
+  ok(await waitFor(hm, id => /저장됨/.test(document.querySelector('#it-' + id + ' .state').textContent), seven, 6000), '5 저장됨');
+  await hm.locator('#it-' + seven + ' .qty').fill(''); await hm.locator('#it-' + seven + ' .qty').press('Tab');
+  ok(await waitFor(hm, id => /안 셈으로 되돌림/.test(document.querySelector('#it-' + id + ' .state').textContent), seven, 6000), '칸을 비우면 → 안 셈으로 되돌림 (서버 저장 확인)');
+  const recs = [...db.docs.entries()].filter(([k, d]) => k.startsWith('inv_counts/') && d.item === seven).map(([k, d]) => d).sort((a, b) => a.clientAt.__ts - b.clientAt.__ts);
+  ok(recs.length === 2 && recs[0].qty === 5 && recs[1].qty === null, '기록은 쌓기: 5 → 지움(null) 두 줄');
   await shot(hm, 'w3_count_b4');
   // 관리자 화면에 실시간 반영
   ok(await waitFor(adm, () => /입력한 사람: 홍길순/.test(document.body.innerText), null, 6000), '관리자 화면에 실시간 반영 (입력한 사람)');
@@ -173,7 +191,7 @@ const text = p => p.evaluate(() => document.body.innerText);
   await adm.evaluate(() => document.activeElement.blur()); await sleep(800);
   await adm.click('[data-bs=g][data-id=s19]');
   ok(await waitFor(adm, () => document.querySelectorAll('.pf tr.g').length === 1, null, 5000), '긴급 표시 → 신청서 초록 줄');
-  ok(await waitFor(adm, () => document.querySelectorAll('.pf tbody tr.gray').length === 28), '수량 없는 28줄 회색(발주 0)');
+  ok(await waitFor(adm, () => document.querySelectorAll('.pf tbody tr.gray').length === 0 && document.querySelectorAll('.pf tbody tr:not(.g)').length === 34), '표시 안 한 줄은 모두 흰 바탕 (회색 없음)');
   ok(/6개 품목 신청/.test(await text(adm)), '6개 품목 신청');
   await shot(adm, 'a4_buy');
   dl = adm.waitForEvent('download'); await adm.click('[data-xls=buy]'); dl = await dl;
