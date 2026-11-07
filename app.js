@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { WAREHOUSES, SAUNA_GROUPS } from './items.js';
 import { setupAdmin } from './admin.js';
 
-const APP_VER = '2026.11.07-1';
+const APP_VER = '2026.11.07-2';
 // 관리자 = 보안 규칙 isAdmin 과 같은 목록 (UID 는 공개돼도 되는 값)
 const ADMINS = [
   { uid: 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', label: '부소장', email: 'unieshaeundae+sub@gmail.com' },
