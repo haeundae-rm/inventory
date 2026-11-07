@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="only light">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>재고조사</title>
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#10233F">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="재고조사">
+<link rel="preconnect" href="https://firestore.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Inter:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="style.css?v=2026.11.07-1">
+</head>
+<body>
+<header class="top" id="top"></header>
+<div id="bands"></div>
+<main id="main"><div class="notice"><strong>재고조사를 여는 중이에요…</strong></div></main>
+<div id="sheet"></div>
+<div id="toast" class="toast" role="status"></div>
+<div id="print"></div>
+<noscript><div class="notice">이 앱은 자바스크립트가 켜져 있어야 해요.</div></noscript>
+<script type="module" src="app.js?v=2026.11.07-1"></script>
+<script>
+  // 15초 안에 화면이 안 뜨면(모듈을 못 받음 등) 안내
+  setTimeout(function(){ var m = document.getElementById('main'); if (m && /여는 중이에요/.test(m.textContent) && !window.__inv) m.innerHTML = '<div class="notice"><strong>앱을 여는 데 오래 걸려요.</strong><br>인터넷 연결을 확인하고 다시 열어 주세요.</div>'; }, 15000);
+</script>
+</body>
+</html>
