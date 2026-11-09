@@ -300,6 +300,19 @@ const text = p => p.evaluate(() => document.body.innerText);
   await adm.selectOption('select[data-k=iwh][data-id=r001]', 'w14'); await sleep(500);
 
   console.log('7-4. (11/9) 가구 보수 — 기존 이력 125건 · 휴대폰 접수 · 완료 처리 · 인쇄');
+  // 규칙 게시 전(읽기 거절) → '불러오는 중'에 멈추지 않고 빨간 안내 → 규칙이 풀리면 15초 안에 저절로 다시 읽음
+  db.flags.denyRepairs = true;
+  const rp = await phone(browser, 'rp', null, true);
+  await waitFor(rp, () => !!document.querySelector('[data-repair]')); await rp.fill('#nm', '이나'); await rp.tap('[data-repair]');
+  ok(await waitFor(rp, () => /가구 보수 기록을 읽지 못했어요/.test(document.body.innerText) && /권한이 막혀/.test(document.body.innerText), null, 5000), '읽기 거절 → "읽지 못했어요 · 권한" 빨간 안내 (멈춤 없음)');
+  db.flags.denyRepairs = false;
+  ok(await waitFor(rp, () => /아직 접수된 게 없어요/.test(document.body.innerText), null, 20000), '규칙이 풀리면 저절로 다시 읽음');
+  // 4자리 호실: 한 글자씩 · 붙여넣기 · 5자리 넘게
+  await rp.tap('#rroom'); await rp.keyboard.type('1713', { delay: 80 }); await rp.locator('#rroom').blur();
+  ok(await waitFor(rp, () => document.querySelector('#rroom').value === '1713', null, 3000), '호실 4자리 1713 그대로');
+  await rp.fill('#rroom', '17135'); await rp.locator('#rroom').blur(); await rp.tap('[data-rf=item][data-v="라운드의자"]');
+  ok(await waitFor(rp, () => document.querySelector('#rroom').value === '1713', null, 3000), '5자리 넣으면 앞 4자리만');
+  await rp.ctx.close();
   await adm.click('[data-tab=repair]');
   ok(await waitFor(adm, () => /기존 이력 125건 넣기/.test(document.body.innerText), null, 5000), '관리자: 기존 이력 125건 넣기 버튼');
   await adm.click('[data-rseed]');
@@ -379,7 +392,7 @@ const text = p => p.evaluate(() => document.body.innerText);
   for (const [p, n] of [[adm, '관리자'], [hm, '하우스맨'], [sn, '사우나'], [off, '사무실(터치)']]) ok(p.errs.length === 0, n + ' 화면 오류 0건' + (p.errs.length ? ' ' + p.errs.join(' | ') : ''));
   const wide = await hm.evaluate(() => document.documentElement.scrollWidth <= 360);
   ok(wide, '360px 에서 가로로 넘치지 않음');
-  const errDocs = [...db.docs.keys()].filter(k => k.startsWith('inv_errors/'));
+  const errDocs = [...db.docs.keys()].filter(k => k.startsWith('inv_errors/') && db.docs.get(k).where !== '보수 읽기');   // '보수 읽기' = 일부러 막아 본 시험
   ok(errDocs.length === 0, '휴대폰 오류 기록 0건' + (errDocs.length ? ' ' + JSON.stringify(errDocs.map(k => db.docs.get(k).msg)) : ''));
   // 360px 사우나 목록 캡처
   await sn.click('[data-go=home]').catch(() => {});

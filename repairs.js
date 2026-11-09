@@ -8,7 +8,7 @@ export const R_BY = ['객실과', 'CRO'];
 
 export function setupRepairs(ctx) {
   const { S, esc, toast, report, seoulDate } = ctx;
-  let list = [], ready = false, sub = null;
+  let list = [], ready = false, sub = null, err = '', retryT = 0;
   // 근무자 접수 칸
   let f = blank(true);
   function blank(all) { const o = { room: '', item: '', qty: 1, cush: [], memo: '' }; if (all || !f) { o.date = seoulDate(); o.by = '객실과'; } else { o.date = f.date; o.by = f.by; } return o; }
@@ -17,12 +17,21 @@ export function setupRepairs(ctx) {
 
   function start() {
     if (sub) return;
+    clearTimeout(retryT);
     sub = S.listenQuery('inv_repairs', null, docs => {
       list = docs.map(d => Object.assign({ id: d.id, pending: d.pending }, d.data)).sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.clientAt || 0) - (b.clientAt || 0));
-      ready = true; ctx.redraw();
-    }, e => report('보수 읽기', e && e.code));
+      ready = true; err = ''; ctx.redraw();
+    }, e => {
+      // 권한(규칙)·인터넷 문제로 읽기가 끊기면 '불러오는 중'에 멈추지 않고 알린 뒤 15초마다 다시 시도
+      err = (e && e.code) || 'error'; report('보수 읽기', err);
+      if (sub) { try { sub(); } catch (x) {} sub = null; }
+      ctx.redraw(); retryT = setTimeout(start, 15000);
+    });
   }
-  function stop() { if (sub) { sub(); sub = null; } }
+  function stop() { clearTimeout(retryT); if (sub) { sub(); sub = null; } }
+  window.addEventListener('online', () => { if (err) { err = ''; start(); } });
+  const errBox = () => '<div class="notice err-box"><strong>가구 보수 기록을 읽지 못했어요.</strong><br>' +
+    (/permission/.test(err) ? '권한이 막혀 있어요 — 관리자에게 알려 주세요 (보안 규칙 v11 게시 확인).' : '인터넷 연결을 확인해 주세요.') + '<br><small>15초마다 자동으로 다시 시도해요.</small></div>';
 
   const md = d => d ? (+d.slice(5, 7)) + '월 ' + (+d.slice(8, 10)) + '일' : '';
   const mmdd = d => d ? d.slice(5, 7) + '월 ' + d.slice(8, 10) + '일' : '';
@@ -39,7 +48,7 @@ export function setupRepairs(ctx) {
     m.innerHTML =
       '<section class="card rform">' +
       '<div class="frow"><label class="l">날짜</label><input type="date" class="txt sm" data-rk="date" value="' + esc(f.date) + '"></div>' +
-      '<div class="frow"><label class="l" for="rroom">호실</label><input id="rroom" class="txt big-in" data-rk="room" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="예: 1713" value="' + esc(f.room) + '"></div>' +
+      '<div class="frow"><label class="l" for="rroom">호실</label><input id="rroom" class="txt big-in" data-rk="room" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="예: 1713" value="' + esc(f.room) + '"></div>' +
       (hist.length ? '<div class="rhist">이 호실 이전 보수 <b>' + hist.length + '건</b> · ' + hist.slice(-3).reverse().map(x => md(x.date) + ' ' + esc(x.item)).join(' · ') + '</div>' : '') +
       '<label class="l">품목</label><div class="tgs g2">' + R_ITEMS.map(v => tg('item', v, f.item === v)).join('') + '</div>' +
       (f.item === '소파쿠션' ? '<label class="l">쿠션 번호 <small>(여러 개 고를 수 있어요)</small></label><div class="tgs g3">' + ['1', '2', '3'].map(v => tg('cush', v, f.cush.indexOf(v) >= 0, v + '번')).join('') + '</div>' : '') +
@@ -49,7 +58,7 @@ export function setupRepairs(ctx) {
       '</section>' +
       '<button class="btn" data-rsave="1">접수하기</button>' +
       '<div class="sec">최근 접수</div>' +
-      (ready ? (recent.length ? recent.map(x => '<div class="rrow"><div><b>' + esc(x.room) + '호</b> · ' + esc(x.item) + ' ' + x.qty + '개' + (x.memo ? ' <small>(' + esc(x.memo) + ')</small>' : '') + '<div class="s">' + md(x.date) + ' · ' + esc(x.by) + (x.who ? ' · ' + esc(x.who) : '') + '</div></div>' +
+      (err ? errBox() : ready ? (recent.length ? recent.map(x => '<div class="rrow"><div><b>' + esc(x.room) + '호</b> · ' + esc(x.item) + ' ' + x.qty + '개' + (x.memo ? ' <small>(' + esc(x.memo) + ')</small>' : '') + '<div class="s">' + md(x.date) + ' · ' + esc(x.by) + (x.who ? ' · ' + esc(x.who) : '') + '</div></div>' +
         (x.pending ? '<span class="pill">보내는 중</span>' : x.status === '완료' ? '<span class="pill ok">완료</span>' : '<span class="pill warn">접수</span>') + '</div>').join('') : '<div class="notice">아직 접수된 게 없어요.</div>')
         : '<div class="notice">불러오는 중이에요…</div>');
   }
@@ -76,7 +85,9 @@ export function setupRepairs(ctx) {
     return false;
   }
   // 다시 그리기 전에 적던 칸 값을 챙김
-  function keepInputs() { document.querySelectorAll('[data-rk]').forEach(i => { const k = i.dataset.rk; f[k] = k === 'room' ? i.value.replace(/[^0-9]/g, '').slice(0, 4) : i.value; }); }
+  // 칸 값은 숫자만 4자리까지 — maxlength 대신 (일부 휴대폰 키보드에서 마지막 자리가 빠지는 문제, 11/9)
+  const roomOf = v => String(v || '').replace(/[^0-9]/g, '').slice(0, 4);
+  function keepInputs() { document.querySelectorAll('[data-rk]').forEach(i => { const k = i.dataset.rk; f[k] = k === 'room' ? roomOf(i.value) : i.value; }); }
   function workerChange(i) {
     if (!i.dataset.rk) return false;
     keepInputs(); if (i.dataset.rk === 'room') ctx.redraw();
@@ -91,6 +102,7 @@ export function setupRepairs(ctx) {
     return list.filter(x => (!flt.month || (x.date || '').slice(0, 7) === flt.month) && (!flt.st || (flt.st === '미완료' ? x.status !== '완료' : x.status === '완료')) && (!q || String(x.room).indexOf(q) >= 0 || (x.item || '').indexOf(q) >= 0));
   }
   function admin() {
+    if (err) return errBox();
     if (!ready) return '<div class="notice">불러오는 중이에요…</div>';
     let h = '';
     if (!list.length) h += '<div class="acard"><h2>가구 보수 이력이 아직 없어요</h2><div class="s">지금 쓰시는 \'가구 보수 이력 현황\'(2025년 11월 26일 ~ 2026년 10월 17일) <b>' + REPAIRS_SEED.length + '건</b>을 한 번에 넣어요. 이전 기록이라 상태는 \'완료\'로 들어가요.</div><div class="tools"><button class="btn" data-rseed="1"' + (seeding ? ' disabled' : '') + '>' + (seeding ? '넣는 중…' : '기존 이력 ' + REPAIRS_SEED.length + '건 넣기') + '</button></div></div>';
@@ -104,7 +116,7 @@ export function setupRepairs(ctx) {
     // 직접 추가 (관리자)
     const sel = (k, arr, v) => '<select data-ak="' + k + '">' + arr.map(o => '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select>';
     h += '<div class="acard"><h2>접수 추가</h2><div class="tools radd">' +
-      '<input type="date" data-ak="date" value="' + esc(af.date) + '"><input class="ti" data-ak="room" placeholder="호실" maxlength="4" inputmode="numeric" value="' + esc(af.room) + '" style="width:80px;min-width:0">' +
+      '<input type="date" data-ak="date" value="' + esc(af.date) + '"><input class="ti" data-ak="room" placeholder="호실 (4자리)" inputmode="numeric" autocomplete="off" value="' + esc(af.room) + '" style="width:110px;min-width:0">' +
       sel('item', R_ITEMS, af.item) + '<input class="ni" data-ak="qty" value="' + af.qty + '" style="width:56px">' + sel('by', R_BY, af.by) +
       '<input class="ti" data-ak="memo" placeholder="비고 (예: 1.3번)" maxlength="60" value="' + esc(af.memo) + '" style="width:180px">' +
       '<button class="btn" data-radd="1">추가</button></div></div>';
@@ -191,7 +203,7 @@ export function setupRepairs(ctx) {
     if (d.rxls) { xls(tools.loadXl, tools.box, tools.fill, tools.cellAll).catch(e => toast('엑셀을 만들지 못했어요: ' + (e && e.message || e))); return true; }
     return false;
   }
-  function keepAdmin() { document.querySelectorAll('[data-ak]').forEach(i => { af[i.dataset.ak] = i.dataset.ak === 'room' ? i.value.replace(/[^0-9]/g, '').slice(0, 4) : i.value; }); }
+  function keepAdmin() { document.querySelectorAll('[data-ak]').forEach(i => { af[i.dataset.ak] = i.dataset.ak === 'room' ? roomOf(i.value) : i.value; }); }
   function adminChange(i) {
     if (i.dataset.ak) { keepAdmin(); return true; }
     if (i.dataset.rflt) { flt[i.dataset.rflt] = i.value; ctx.redraw(); return true; }

@@ -5,7 +5,7 @@ const EMAILS = { 'unieshaeundae+sub@gmail.com': 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', 
 const PW = 'test-pw';
 
 function makeDb() {
-  const docs = new Map(), sessions = {}, log = [];
+  const docs = new Map(), sessions = {}, log = [], flags = {};   // flags.denyRepairs: 규칙 게시 전 흉내
   const isAdmin = uid => !!uid && ADMINS.includes(uid);
   const signedIn = uid => !!uid;
   const isName = n => typeof n === 'string' && n.length > 0 && n.length <= 20;
@@ -52,6 +52,7 @@ function makeDb() {
     return false;   // 그 밖은 막힘
   }
   function canRead(c, uid) {
+    if (c === 'inv_repairs' && flags.denyRepairs) return false;
     if (c === 'inv_buy' || c === 'inv_errors') return isAdmin(uid);
     if (['inv_items', 'inv_rounds', 'inv_counts', 'inv_repairs'].includes(c)) return signedIn(uid);
     return false;
@@ -85,6 +86,6 @@ function makeDb() {
     if (op === 'del') { if (!isAdmin(uid)) return { denied: true }; docs.delete(a.path); return { ok: true }; }
     throw new Error('op? ' + op);
   }
-  return { call, docs, log, sessions, PW };
+  return { call, docs, log, sessions, PW, flags };
 }
 module.exports = { makeDb, PW };

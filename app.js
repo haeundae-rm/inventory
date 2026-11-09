@@ -5,7 +5,7 @@ import { WAREHOUSES, SAUNA_GROUPS } from './items.js';
 import { setupAdmin } from './admin.js';
 import { setupRepairs } from './repairs.js';
 
-const APP_VER = '2026.11.09-3';
+const APP_VER = '2026.11.09-4';
 const PARTS = ['객실', '사우나', '사무실'];   // 사무실: 11/9 신설 (품목은 관리자가 '품목 · 창고'에서 넣음)
 // 관리자 = 보안 규칙 isAdmin 과 같은 목록 (UID 는 공개돼도 되는 값)
 const ADMINS = [
