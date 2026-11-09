@@ -4,7 +4,8 @@ import * as S from './store.js';
 import { WAREHOUSES, SAUNA_GROUPS } from './items.js';
 import { setupAdmin } from './admin.js';
 
-const APP_VER = '2026.11.07-3';
+const APP_VER = '2026.11.09-1';
+const PARTS = ['객실', '사우나', '사무실'];   // 사무실: 11/9 신설 (품목은 관리자가 '품목 · 창고'에서 넣음)
 // 관리자 = 보안 규칙 isAdmin 과 같은 목록 (UID 는 공개돼도 되는 값)
 const ADMINS = [
   { uid: 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', label: '부소장', email: 'unieshaeundae+sub@gmail.com' },
@@ -16,11 +17,14 @@ let user = null, isAdm = false, mode = 'worker';           // mode: worker / adm
 let items = [], itemsReady = false, rounds = [], roundsReady = false;
 let name = lsGet('inv_name') || '', part = null, wh = null, screen = 'home', filter = 'all';
 // 앱을 다시 열어도 보던 곳(구분·창고)으로 돌아감 (휴대폰이 잠기거나 새로 고침돼도)
-try { const p = JSON.parse(lsGet('inv_pos') || 'null'); if (p && name && (p.part === '객실' || p.part === '사우나')) { part = p.part; wh = p.wh === undefined ? null : p.wh; screen = p.screen === 'count' || p.screen === 'wh' ? p.screen : 'home'; } } catch (e) {}
+try { const p = JSON.parse(lsGet('inv_pos') || 'null'); if (p && name && PARTS.indexOf(p.part) >= 0) { part = p.part; wh = p.wh === undefined ? null : p.wh; screen = p.screen === 'count' || p.screen === 'wh' ? p.screen : 'home'; } } catch (e) {}
 function savePos() { lsSet('inv_pos', part ? JSON.stringify({ part, wh, screen }) : null); }
 let cnt = {}, cntSub = null, cntKey = '', cntReady = false;   // 근무자: 이 회차·구분 기록 { 품목ID: { qty, pending, at, by } }
 const drafts = {}, timers = {};                              // 누르는 중인 숫자 (0.7초 뒤 저장)
 let failed = 0, dlg = null, busy = false, newVer = '', renderLater = false, subs = [];
+// 휴대폰(손가락) = 숫자를 누르면 큰 숫자판이 뜸 (직접 입력, 11/9). PC(마우스) = 칸에 바로 타자
+const TOUCH = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+let pad = null;   // { id, v: '12', fresh } — 숫자판
 
 // ---------- 도구
 const $ = s => document.querySelector(s);
@@ -119,7 +123,7 @@ function render() {
   const r = openRound();
   let back = '', title = '재고조사', sub = r ? r.title : '';
   if (screen === 'wh') { back = 'home'; title = '객실 재고조사'; }
-  if (screen === 'count') { back = part === '객실' ? 'wh' : 'home'; title = part === '객실' ? whName(wh) : '사우나 재고조사'; sub = (name || '') + (r ? ' · ' + r.title : ''); }
+  if (screen === 'count') { back = part === '객실' ? 'wh' : 'home'; title = part === '객실' ? whName(wh) : part + ' 재고조사'; sub = (name || '') + (r ? ' · ' + r.title : ''); }
   $('#top').innerHTML = '<div class="top-row">' + (back ? '<button class="back" data-go="' + back + '">‹ 뒤로</button>' : '') + '<h1>' + esc(title) + '</h1></div>' +
     (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '<div class="sync" id="sync"></div>';
   drawSync(); drawBands();
@@ -137,11 +141,12 @@ function whName(id) { return (WAREHOUSES.filter(w => w.id === id)[0] || { name: 
 function whList() { const ids = WAREHOUSES.map(w => w.id); const extra = live('객실').some(x => ids.indexOf(x.wh) < 0); return extra ? WAREHOUSES.concat([{ id: '', name: '창고 미지정' }]) : WAREHOUSES; }
 const inWh = (x, id) => id ? x.wh === id : WAREHOUSES.every(w => w.id !== x.wh);
 function homeV(m) {
-  const nR = live('객실').length, nS = live('사우나').length;
+  const nR = live('객실').length, nS = live('사우나').length, nO = live('사무실').length;
   m.innerHTML = '<section class="card"><label class="l" for="nm">이름</label><input class="txt" id="nm" maxlength="20" autocomplete="off" placeholder="이름을 적어 주세요" value="' + esc(name) + '"></section>' +
     '<button class="big" data-part="객실"><span class="t">객실 재고조사</span><span class="d">하우스맨(키퍼) · 창고 ' + WAREHOUSES.length + '곳 · ' + nR + '개 품목</span></button>' +
     '<button class="big" data-part="사우나"><span class="t">사우나 재고조사</span><span class="d">사우나 근무자 · ' + nS + '개 품목</span></button>' +
-    '<p class="hint">· 숫자를 넣으면 바로 휴대폰에 저장돼요.<br>· 인터넷이 끊겨도 괜찮아요. 연결되면 자동으로 보내요.</p>' + adminLink();
+    (nO ? '<button class="big" data-part="사무실"><span class="t">사무실 재고조사</span><span class="d">사무실 · ' + nO + '개 품목</span></button>' : '') +
+    '<p class="hint">· 숫자 칸을 누르면 숫자판이 떠서 직접 입력할 수 있어요.<br>· 숫자를 넣으면 바로 휴대폰에 저장돼요.<br>· 인터넷이 끊겨도 괜찮아요. 연결되면 자동으로 보내요.</p>' + adminLink();
 }
 function prog(list) { return [list.filter(x => has(x.id)).length, list.length]; }
 function has(id) { const v = valOf(id); return v !== ''; }
@@ -155,7 +160,7 @@ function whV(m) {
       return '<button class="big wh" data-wh="' + w.id + '"><span class="row"><span class="t">' + esc(w.name) + '</span><span class="pill ' + (a === b ? 'ok' : '') + '">' + (a === b ? '완료' : a + ' / ' + b) + '</span></span>' + bar(a, b) + '</button>'; }).join('') +
     '<button class="btn" data-finish="1">객실 조사 다 했어요</button>';
 }
-function curList() { return part === '객실' ? live('객실').filter(x => inWh(x, wh)) : live('사우나'); }
+function curList() { return part === '객실' ? live('객실').filter(x => inWh(x, wh)) : live(part); }
 function countV(m) {
   const L = curList(); const shown = L.filter(x => filter === 'all' || !has(x.id));
   let rows = '';
@@ -165,7 +170,7 @@ function countV(m) {
   else rows = shown.map(itemV).join('');
   m.innerHTML = '<div class="stick"><div class="card head" id="head"></div>' +
     '<div class="chips"><button class="chip ' + (filter === 'all' ? 'on' : '') + '" data-f="all">전체</button><button class="chip ' + (filter === 'left' ? 'on' : '') + '" data-f="left">안 센 것만</button></div></div>' +
-    rows + (part === '객실' ? '<button class="btn" data-go="wh">창고 목록으로</button>' : '<button class="btn" data-finish="1">사우나 조사 다 했어요</button>');
+    rows + (part === '객실' ? '<button class="btn" data-go="wh">창고 목록으로</button>' : '<button class="btn" data-finish="1">' + part + ' 조사 다 했어요</button>');
   drawHead();
 }
 function drawHead() {
@@ -183,16 +188,17 @@ function itemState(id) {
 function itemV(x) {
   const v = valOf(x.id), h = v !== '';
   return '<div class="item ' + (h ? 'has' : '') + '" id="it-' + x.id + '"><div class="nm">' + esc(x.name) + '</div>' +
-    (part === '사우나' && x.memo ? '<div class="memo">' + esc(x.memo) + '</div>' : '') +
+    (part !== '객실' && x.memo ? '<div class="memo">' + esc(x.memo) + '</div>' : '') +
     '<div class="ctl"><button class="pm" data-d="-1" data-id="' + x.id + '" aria-label="하나 빼기">−</button>' +
-    '<input class="qty" inputmode="numeric" pattern="[0-9]*" data-id="' + x.id + '" value="' + v + '" placeholder="–" aria-label="' + esc(x.name) + ' 수량">' +
+    (TOUCH ? '<button class="qty' + (h ? '' : ' empty') + '" data-pad="' + x.id + '" aria-label="' + esc(x.name) + ' 수량 직접 입력">' + (h ? v : '–') + '</button>'
+      : '<input class="qty" inputmode="numeric" pattern="[0-9]*" data-id="' + x.id + '" value="' + v + '" placeholder="–" aria-label="' + esc(x.name) + ' 수량">') +
     '<button class="pm" data-d="1" data-id="' + x.id + '" aria-label="하나 더하기">＋</button><span class="u">' + esc(x.unit || '') + '</span></div>' +
     '<div class="state">' + itemState(x.id) + '</div></div>';
 }
 function drawItem(id) {
   const el = document.getElementById('it-' + id); if (!el) return;
   const x = items.filter(i => i.id === id)[0]; if (!x) return;
-  const a = document.activeElement, focused = a && a.dataset && a.dataset.id === id;
+  const a = document.activeElement, focused = !!(a && a.matches && a.matches('input.qty') && a.dataset.id === id);   // 타자 중인 칸만 그대로 둠
   if (focused) { el.classList.toggle('has', valOf(id) !== ''); el.querySelector('.state').innerHTML = itemState(id); return; }
   el.outerHTML = itemV(x);
 }
@@ -219,8 +225,42 @@ function drawBands() {
 // =====================================================================
 // 관리자 로그인 창
 // =====================================================================
+// ---------- 숫자판 (휴대폰에서 숫자 칸을 누르면)
+function openPad(id) {
+  const v = valOf(id);
+  pad = { id, v: v === '' ? '' : String(v), fresh: true };
+  const el = document.getElementById('it-' + id); if (el) el.scrollIntoView({ block: 'center' });
+  drawDlg();
+}
+function padKey(k) {
+  if (!pad) return;
+  if (k === 'bs') pad.v = pad.fresh ? '' : pad.v.slice(0, -1);
+  else if (k === 'clr') pad.v = '';
+  else { const n = (pad.fresh ? '' : pad.v) + k; pad.v = String(Math.min(100000, +n)); }
+  pad.fresh = false; drawDlg();
+}
+function padDone(next) {
+  const id = pad.id, v = pad.v, had = valOf(id) !== '';
+  if (v === '') { if (had) setDraft(id, null); }   // 비우고 확인 → 안 셈
+  else setDraft(id, +v);
+  pad = null;
+  if (next) { const L = [...document.querySelectorAll('.item')].map(e => e.id.slice(3)); const k = L.indexOf(id); if (L[k + 1]) { openPad(L[k + 1]); return; } toast('마지막 품목이에요'); }
+  drawDlg();
+}
+function drawPad(el) {
+  const x = items.filter(i => i.id === pad.id)[0] || { name: '', unit: '' };
+  const L = [...document.querySelectorAll('.item')]; const last = L.length && L[L.length - 1].id === 'it-' + pad.id;
+  const key = (k, t, c) => '<button class="pk' + (c ? ' ' + c : '') + '" data-pk="' + k + '">' + t + '</button>';
+  el.className = 'on';
+  el.innerHTML = '<div class="dlg pad"><div class="pad-nm">' + esc(x.name) + '</div>' +
+    '<div class="pad-v' + (pad.v === '' ? ' empty' : '') + '"><span class="num">' + (pad.v === '' ? '–' : pad.v) + '</span> <small>' + esc(x.unit || '') + '</small></div>' +
+    '<div class="pad-keys">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => key(n, n)).join('') + key('clr', '지움', 'sm') + key(0, 0) + key('bs', '⌫', 'sm') + '</div>' +
+    '<div class="pad-go"><button class="btn ghost" data-pad-ok="1">확인</button>' + (last ? '' : '<button class="btn" data-pad-next="1">확인 · 다음 ▶</button>') + '</div>' +
+    '<button class="pad-x" data-pad-x="1">닫기</button></div>';
+}
 function drawDlg() {
   const el = $('#sheet');
+  if (pad) { drawPad(el); return; }
   if (!dlg) { el.innerHTML = ''; el.className = ''; return; }
   el.className = 'on';
   if (isAdm) {
@@ -246,7 +286,7 @@ function login() {
 // 누르기
 // =====================================================================
 document.addEventListener('click', e => {
-  const t = e.target.closest('button'); if (!t) { if (e.target.id === 'sheet') { dlg = null; drawDlg(); } return; }
+  const t = e.target.closest('button'); if (!t) { if (e.target.id === 'sheet') { dlg = null; pad = null; drawDlg(); } return; }
   const d = t.dataset;
   if (d.reload) { location.reload(); return; }
   if (d.xFailed) { failed = 0; drawBands(); return; }
@@ -258,6 +298,11 @@ document.addEventListener('click', e => {
   if (d.logout) { dlg = null; drawDlg(); lsSet('inv_mode', null); mode = 'worker'; S.signOut(); return; }
   if (d.toWorker) { mode = 'worker'; lsSet('inv_mode', 'worker'); screen = 'home'; render(); window.scrollTo(0, 0); return; }
   if (mode === 'admin' && isAdm) { ADM.click(t, e); return; }
+  if (d.pad) { openPad(d.pad); return; }
+  if (d.pk !== undefined) { padKey(d.pk); return; }
+  if (d.padOk) { padDone(false); return; }
+  if (d.padNext) { padDone(true); return; }
+  if (d.padX) { pad = null; drawDlg(); return; }
   if (d.part) {
     const n = ($('#nm') || {}).value; if (n !== undefined) name = n.trim().slice(0, 20);
     if (!name) { toast('이름을 먼저 적어 주세요'); $('#nm').focus(); return; }
@@ -273,10 +318,10 @@ document.addEventListener('click', e => {
   }
   if (d.finish) {
     flushAll();
-    const L = part === '객실' ? live('객실') : live('사우나'); const left = L.filter(x => !has(x.id)).length;
+    const L = live(part); const left = L.filter(x => !has(x.id)).length;
     if (left) {
       toast('아직 안 센 품목이 ' + left + '개 있어요');
-      if (part === '사우나') { filter = 'left'; render(); window.scrollTo(0, 0); }
+      if (part !== '객실') { filter = 'left'; render(); window.scrollTo(0, 0); }
       return;
     }
     screen = 'done'; render(); window.scrollTo(0, 0); return;
@@ -292,6 +337,7 @@ document.addEventListener('change', e => {
   if (i.id === 'nm') { name = i.value.trim().slice(0, 20); lsSet('inv_name', name); }
 });
 document.addEventListener('keydown', e => {
+  if (pad) { if (/^[0-9]$/.test(e.key)) padKey(e.key); else if (e.key === 'Backspace') padKey('bs'); else if (e.key === 'Enter') padDone(true); else if (e.key === 'Escape') { pad = null; drawDlg(); } e.preventDefault(); return; }
   if (e.key === 'Enter' && e.target.matches('input.qty')) {
     e.preventDefault(); const ins = [...document.querySelectorAll('input.qty')]; const k = ins.indexOf(e.target);
     e.target.blur(); if (ins[k + 1]) ins[k + 1].focus();

@@ -1,4 +1,4 @@
-// fakedb.js — 시험용 메모리 Firestore + 보안 규칙 v9 의 inv_* 블록을 JS 로 그대로 옮긴 검사
+// fakedb.js — 시험용 메모리 Firestore + 보안 규칙 v10 의 inv_* 블록을 JS 로 그대로 옮긴 검사
 // (규칙에 막히는 쓰기는 시험에서도 막힘). Node 쪽에서 돌고, 휴대폰(브라우저 창)들은 window.__fdb 로 부름
 const ADMINS = ['wytSL9o4vvN4U2G3z6R64hafC9t2', 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', 'iw2orXgIgPgTbLUQa0b41XJ9Dvd2'];
 const EMAILS = { 'unieshaeundae+sub@gmail.com': 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', 'unieshaeundae+admin@gmail.com': 'iw2orXgIgPgTbLUQa0b41XJ9Dvd2' };
@@ -21,7 +21,7 @@ function makeDb() {
     return signedIn(uid)
       && hasOnly(d, ['round', 'part', 'item', 'qty', 'by', 'at', 'clientAt', 'uid'])
       && typeof d.round === 'string' && /^[0-9]{4}-[0-9]{2}$/.test(d.round)
-      && ['객실', '사우나'].includes(d.part)
+      && ['객실', '사우나', '사무실'].includes(d.part)   // v10
       && typeof d.item === 'string' && d.item.length > 0 && d.item.length <= 40
       && (d.qty === null || (Number.isInteger(d.qty) && d.qty >= 0 && d.qty <= 100000))   // v9: null = 지움
       && isName(d.by)

@@ -3,7 +3,7 @@
 // 탭: 진행 현황 · 사우나 결산 · 사우나 구매신청서 · 객실 조사표 · 품목 · 창고 · 회차
 import { seedItems } from './items.js';
 
-const TABS = [['prog', '진행 현황'], ['settle', '사우나 결산'], ['buy', '사우나 구매신청서'], ['room', '객실 조사표'], ['items', '품목 · 창고'], ['rounds', '회차']];
+const TABS = [['prog', '진행 현황'], ['settle', '사우나 결산'], ['buy', '사우나 구매신청서'], ['room', '객실 조사표'], ['office', '사무실 조사표'], ['items', '품목 · 창고'], ['rounds', '회차']];
 const ST = { g: '긴급', y: '입고 완료', r: '미입고' };
 const ST_FILL = { g: '92D050', y: 'FFF200', r: 'FF7B7B', gray: 'D9D9D9' };
 const EXCELJS = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
@@ -38,7 +38,7 @@ export function setupAdmin(ctx) {
     cntKey = key; cnt = {}; cntBy = {}; cntReady = false;
     if (!key) return;
     cntSub = S.listenQuery('inv_counts', [['round', '==', key]], docs => {
-      cnt = latest(docs); cntReady = true; cntBy = { 객실: {}, 사우나: {} };
+      cnt = latest(docs); cntReady = true; cntBy = { 객실: {}, 사우나: {}, 사무실: {} };
       docs.forEach(d => { const x = d.data; if (cntBy[x.part]) { const o = cntBy[x.part][x.by] || (cntBy[x.part][x.by] = { n: 0, t: 0 }); o.n++; o.t = Math.max(o.t, x.clientAt || 0); } });
       ctx.redraw();
     }, e => report('기록 읽기', e && e.code));
@@ -78,7 +78,7 @@ export function setupAdmin(ctx) {
       '<nav class="tabs">' + TABS.map(([k, n]) => '<button data-tab="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + n + '</button>').join('') + '</nav></header>';
     if (!items().length && tab !== 'items') h += '<div class="band err"><b>품목이 아직 없어요.</b> \'품목 · 창고\' 탭에서 기본 품목을 넣어 주세요.<button data-tab="items">가기</button></div>';
     else if (!r && tab !== 'rounds' && tab !== 'items') h += '<div class="band err"><b>재고조사 회차가 없어요.</b> \'회차\' 탭에서 이번 달 조사를 열어 주세요.<button data-tab="rounds">가기</button></div>';
-    h += '<div class="pane">' + (({ prog, settle, buy, room, items: itemsT, rounds: roundsT })[tab])(r) + '</div><p class="ver">재고조사 앱 ' + ctx.ver + '</p>';
+    h += '<div class="pane">' + (({ prog, settle, buy, room, office, items: itemsT, rounds: roundsT })[tab])(r) + '</div><p class="ver">재고조사 앱 ' + ctx.ver + '</p>';
     const sc = main.querySelector('.scroll'), st = sc ? sc.scrollTop : 0;
     main.innerHTML = h;
     const s2 = main.querySelector('.scroll'); if (s2) s2.scrollTop = st;
@@ -101,7 +101,8 @@ export function setupAdmin(ctx) {
     };
     h += '<div class="grid2">' + card('객실', '하우스맨(키퍼) · 월말 1회', L => WAREHOUSES.map(w => { const l = L.filter(x => x.wh === w.id), d = l.filter(x => qty(r, x.id) !== undefined).length;
       return l.length ? '<div class="whrow"><span>' + esc(w.name) + '</span><div class="meter"><i class="' + (d === l.length ? 'full' : '') + '" style="width:' + d / l.length * 100 + '%"></i></div><span class="num">' + d + '/' + l.length + '</span></div>' : ''; }).join('')) +
-      card('사우나', '사우나 근무자 · 월말 1회') + '</div>';
+      card('사우나', '사우나 근무자 · 월말 1회') +
+      (live('사무실').length ? card('사무실', '사무실 · 월말 1회') : '<div class="acard"><h2>사무실 재고조사</h2><div class="s">아직 품목이 없어요. \'품목 · 창고\' 탭 맨 아래 \'사무실 품목\'에서 넣으면 근무자 첫 화면에 \'사무실 재고조사\' 버튼이 생겨요.</div><div class="tools"><button class="btn ghost" data-tab="items">품목 넣으러 가기</button></div></div>') + '</div>';
     h += '<div class="acard"><h2>' + esc(r.title) + ' · ' + r.status + '</h2><div class="s">조사일 ' + fmtDate(r.day) + '. 조사가 끝나면 → <b>사우나 결산</b> 확인 → <b>사우나 구매신청서</b> 작성·인쇄 → <b>조사 마감</b> 순서로 해 주세요.<br>' +
       '마감하면 근무자 휴대폰에서 숫자를 더 못 바꾸고, 이번 재고가 다음 달 \'전월이월\'로 넘어가요.</div><div class="tools">' +
       (r.status === '진행' ? '<button class="btn" data-close-round="1">조사 마감</button>' : '<button class="btn ghost" data-reopen="1">마감 풀기 (다시 진행)</button>') + '</div></div>';
@@ -158,15 +159,24 @@ export function setupAdmin(ctx) {
       '<div class="pwrap"><div class="pscale">' + buyPaper(r) + '</div></div></div>';
   }
 
-  // ---------- 객실 조사표 (지금 쓰는 '저장품 재고조사' 3단 표 그대로)
-  function roomNames(r) { const by = cntBy['객실'] ? Object.keys(cntBy['객실']).filter(Boolean) : []; return by.join(', '); }
-  function roomPaper(r) {
-    const L = live('객실'), per = Math.max(30, Math.ceil(L.length / 3));
+  // ---------- 객실 조사표 (지금 쓰는 '저장품 재고조사' 3단 표 그대로) · 사무실 조사표 (같은 틀, 11/9 신설)
+  const PAPER = { 객실: { title: '저장품 재고조사', dept: '객실팀' }, 사무실: { title: '사무실 재고조사', dept: '객실팀 사무실' } };
+  function roomNames(r, p) { p = p || '객실'; const by = cntBy[p] ? Object.keys(cntBy[p]).filter(Boolean) : []; return by.join(', '); }
+  function roomPaper(r, p) {
+    p = p || '객실';
+    const L = live(p), per = Math.max(30, Math.ceil(L.length / 3));
     let rows = '';
     for (let i = 0; i < per; i++) rows += '<tr>' + [i, i + per, i + per * 2].map(k => { const x = L[k];
       return '<td class="c">' + (k + 1) + '</td><td>' + (x ? esc(x.name) : '') + '</td><td class="n">' + (x ? n0(qty(r, x.id)) : '') + '</td>'; }).join('') + '</tr>';
-    return '<div class="paper pr"><h1>' + r.y + '년 ' + r.m + '월 저장품 재고조사</h1><table><thead><tr>' + '<th style="width:30px">NO</th><th>품목</th><th style="width:58px">재고량</th>'.repeat(3) + '</tr></thead><tbody>' + rows + '</tbody></table>' +
-      '<div class="sign">이름 : ' + esc(roomNames(r)) + '<span>부서 : 객실팀</span><span>조사일 : ' + fmtDate(r.day) + '</span></div></div>';
+    return '<div class="paper pr"><h1>' + r.y + '년 ' + r.m + '월 ' + PAPER[p].title + '</h1><table><thead><tr>' + '<th style="width:30px">NO</th><th>품목</th><th style="width:58px">재고량</th>'.repeat(3) + '</tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div class="sign">이름 : ' + esc(roomNames(r, p)) + '<span>부서 : ' + PAPER[p].dept + '</span><span>조사일 : ' + fmtDate(r.day) + '</span></div></div>';
+  }
+  function office(r) {
+    if (!r) return '';
+    if (!live('사무실').length) return '<div class="acard"><h2>사무실 품목이 아직 없어요</h2><div class="s">\'품목 · 창고\' 탭 맨 아래 \'사무실 품목\'에서 품목을 넣어 주세요. 넣는 순서대로 표에 나와요.</div><div class="tools"><button class="btn" data-tab="items">품목 넣으러 가기</button></div></div>';
+    return '<div class="note">사무실 재고조사표예요. 객실 조사표와 같은 3단 표에 품목 순서대로 숫자가 채워지고, 이름 칸에는 입력한 사람이 자동으로 들어가요.</div>' +
+      '<div class="tools"><button class="btn blue" data-print="office">인쇄 · PDF 저장</button><button class="btn ghost" data-xls="office">엑셀 내려받기</button></div>' +
+      '<div class="pwrap"><div class="pscale">' + roomPaper(r, '사무실') + '</div></div>';
   }
   function room(r) {
     if (!r) return '';
@@ -192,7 +202,7 @@ export function setupAdmin(ctx) {
       '<div class="scroll"><table class="t"><thead><tr><th>순서</th><th>품목</th><th>단위</th><th>' + (p === '객실' ? '창고' : '자재코드') + '</th><th>사용</th><th>순서</th></tr></thead><tbody>' + L.map((x, i) => row(x, i, L)).join('') + '</tbody></table></div>' +
       '<div class="tools"><input class="ti" id="new-' + p + '" placeholder="새 품목 이름" maxlength="40"><button class="btn ghost" data-add="' + p + '">' + p + ' 품목 추가</button></div></div>'; };
     return '<div class="note">고친 내용은 칸에서 나오면 바로 저장되고 근무자 휴대폰에도 바로 반영돼요. 안 쓰는 품목은 지우지 말고 \'사용\'을 끄세요 (지난 기록이 남아요).</div>' +
-      '<div class="grid2">' + tbl('객실', '객실 품목') + tbl('사우나', '사우나 품목') + '</div>';
+      '<div class="grid2">' + tbl('객실', '객실 품목') + tbl('사우나', '사우나 품목') + '</div>' + tbl('사무실', '사무실 품목');
   }
 
   // ---------- 회차
@@ -242,13 +252,14 @@ export function setupAdmin(ctx) {
     }
     if (d.reopen && r) { w(S.patch('inv_rounds/' + r.id, { status: '진행' }), '다시 진행으로 바꿨어요'); return; }
     if (d.bs && r) { const b = buyDoc(r), cur = b.st && b.st[d.id]; w(S.patch('inv_buy/' + r.id, { st: { [d.id]: cur === d.bs ? null : d.bs }, date: b.date || r.day })); return; }
-    if (d.print && r) { print(d.print === 'buy' ? buyPaper(r) : roomPaper(r)); return; }
+    if (d.print && r) { print(d.print === 'buy' ? buyPaper(r) : roomPaper(r, d.print === 'office' ? '사무실' : '객실')); return; }
     if (d.xls && r) { xls(d.xls, r); return; }
     if (d.add) {
       const inp = document.getElementById('new-' + d.add), nm = (inp.value || '').trim(); if (!nm) { toast('새 품목 이름을 적어 주세요'); inp.focus(); return; }
       const L = items().filter(x => x.part === d.add), order = L.reduce((a, x) => Math.max(a, x.order || 0), 0) + 1;
-      const id = (d.add === '객실' ? 'r' : 's') + Date.now().toString(36);
-      w(S.set('inv_items/' + id, { part: d.add, order, name: nm, unit: d.add === '객실' ? '개' : 'EA', wh: d.add === '객실' ? WAREHOUSES[0].id : '', code: '', memo: '', use: true }), nm + ' 추가했어요');
+      const id = ({ 객실: 'r', 사우나: 's', 사무실: 'o' })[d.add] + Date.now().toString(36);
+      w(S.set('inv_items/' + id, { part: d.add, order, name: nm, unit: d.add === '사우나' ? 'EA' : '개', wh: d.add === '객실' ? WAREHOUSES[0].id : '', code: '', memo: '', use: true }), nm + ' 추가했어요');
+      inp.value = '';
       return;
     }
     if (d.mv) {
@@ -328,15 +339,16 @@ export function setupAdmin(ctx) {
         ws.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1, printArea: 'B2:G' + (4 + n) };
         fname = '사우나 구매신청서 ' + (b.date || r.day) + '.xlsx';
       } else {
-        const ws = wb.addWorksheet('재고조사'), L = live('객실'), per = Math.max(30, Math.ceil(L.length / 3));
+        const p = kind === 'office' ? '사무실' : '객실', T = PAPER[p];
+        const ws = wb.addWorksheet('재고조사'), L = live(p), per = Math.max(30, Math.ceil(L.length / 3));
         ws.columns = [5, 20, 9, 5, 20, 9, 5, 20, 9].map(w => ({ width: w }));
-        ws.mergeCells('A1:I1'); ws.getCell('A1').value = y + '년 ' + m + '월 저장품 재고조사'; ws.getCell('A1').font = { bold: true, size: 16 }; ws.getCell('A1').alignment = { horizontal: 'center' }; ws.getRow(1).height = 30;
+        ws.mergeCells('A1:I1'); ws.getCell('A1').value = y + '년 ' + m + '월 ' + T.title; ws.getCell('A1').font = { bold: true, size: 16 }; ws.getCell('A1').alignment = { horizontal: 'center' }; ws.getRow(1).height = 30;
         ws.getRow(3).values = ['NO', '품목', '재고량', 'NO', '품목', '재고량', 'NO', '품목', '재고량'];
         for (let i = 0; i < per; i++) { const v = []; [i, i + per, i + per * 2].forEach(k => { const x = L[k]; v.push(k + 1, x ? x.name : null, x && qty(r, x.id) !== undefined ? qty(r, x.id) : null); }); ws.getRow(4 + i).values = v; }
         cellAll(ws, 3, 3 + per, 1, 9, (c, rr, cc) => { c.border = box; c.alignment = { horizontal: cc % 3 === 2 && rr > 3 ? 'left' : 'center', vertical: 'middle' }; if (rr === 3) { c.fill = fill('EDEDED'); c.font = { bold: true }; } });
-        const fr = 5 + per; ws.mergeCells('A' + fr + ':I' + fr); ws.getCell('A' + fr).value = '이름 : ' + roomNames(r) + '          부서 : 객실팀          조사일 : ' + fmtDate(r.day);
+        const fr = 5 + per; ws.mergeCells('A' + fr + ':I' + fr); ws.getCell('A' + fr).value = '이름 : ' + roomNames(r, p) + '          부서 : ' + T.dept + '          조사일 : ' + fmtDate(r.day);
         ws.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
-        fname = y + '년 ' + m + '월 저장품 재고조사.xlsx';
+        fname = y + '년 ' + m + '월 ' + T.title + '.xlsx';
       }
       const buf = await wb.xlsx.writeBuffer();
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = fname;

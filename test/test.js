@@ -12,8 +12,8 @@ const ok = (c, m) => { if (c) { passes++; console.log('  ✓ ' + m); } else { fa
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
 
-async function phone(browser, name, vp) {
-  const ctx = await browser.newContext({ viewport: vp || { width: 360, height: 740 }, acceptDownloads: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
+async function phone(browser, name, vp, touch) {
+  const ctx = await browser.newContext({ viewport: vp || { width: 360, height: 740 }, acceptDownloads: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul', hasTouch: !!touch, isMobile: !!touch });
   await ctx.exposeBinding('__fdb', (src, op, a) => db.call(op, a));
   await ctx.addInitScript(n => { window.__phone = n; }, name);
   await ctx.route('**/*', route => {
@@ -228,6 +228,50 @@ const text = p => p.evaluate(() => document.body.innerText);
   await adm.selectOption('select[data-k=iwh][data-id=r001]', 'w14');
   await shot(adm, 'a6_items');
 
+  console.log('7-2. (11/9) 사무실 재고조사 신설 + 휴대폰 숫자판 직접 입력');
+  await adm.click('[data-tab=office]'); await sleep(200);
+  ok(/사무실 품목이 아직 없어요/.test(await text(adm)), '사무실 품목 없음 안내');
+  await adm.click('[data-tab=items]'); await sleep(200);
+  for (const nm of ['복사용지 A4', '볼펜', '테이프']) { await adm.fill('#new-사무실', nm); await adm.click('[data-add="사무실"]'); await sleep(500); }
+  ok(await waitFor(adm, () => document.querySelectorAll('input[data-k=iname]').length === 113, null, 5000), '사무실 품목 3개 추가 (총 113)');
+  const off = await phone(browser, 'off', { width: 360, height: 740 }, true);
+  ok(await waitFor(off, () => !!document.querySelector('[data-part="사무실"]')), '근무자 첫 화면에 \'사무실 재고조사\' 버튼');
+  await shot(off, 'w6_home_office');
+  await off.fill('#nm', '김가'); await off.tap('[data-part="사무실"]');
+  ok(await waitFor(off, () => document.querySelectorAll('.item').length === 3 && document.querySelectorAll('button.qty[data-pad]').length === 3), '사무실 3개 · 휴대폰은 숫자 칸이 누르는 버튼');
+  await off.tap('button.qty[data-pad]');
+  ok(await waitFor(off, () => !!document.querySelector('.dlg.pad')), '숫자 칸 누르면 숫자판');
+  await off.tap('[data-pk="1"]'); await off.tap('[data-pk="2"]'); await off.tap('[data-pk="5"]'); await off.tap('[data-pk="bs"]');
+  ok((await off.textContent('.pad-v .num')) === '12', '1·2·5·⌫ → 12');
+  await shot(off, 'w7_pad');
+  await off.tap('[data-pad-next]');
+  ok(await waitFor(off, () => document.querySelector('.dlg.pad .pad-nm') && document.querySelector('.dlg.pad .pad-nm').textContent === '볼펜'), '확인 · 다음 → 다음 품목(볼펜) 숫자판');
+  await off.tap('[data-pk="0"]'); await off.tap('[data-pad-ok]');
+  ok(await waitFor(off, () => !document.querySelector('.dlg.pad') && [...document.querySelectorAll('button.qty')].map(b => b.textContent).join(',') === '12,0,–'), '화면: 12 · 0 · – (볼펜 0 = 0개로 셈)');
+  ok(await waitFor(off, () => document.querySelectorAll('.stt.ok').length === 2, null, 6000), '서버 저장 확인 2건');
+  const offRecs = [...db.docs.entries()].filter(([k, d]) => k.startsWith('inv_counts/') && d.part === '사무실').map(([k, d]) => d.qty).sort();
+  ok(JSON.stringify(offRecs) === '[0,12]', '서버: 사무실 12 · 0');
+  // 숫자판 '지움' → 안 셈
+  await off.tap('button.qty[data-pad]'); await off.tap('[data-pk="clr"]'); await off.tap('[data-pad-ok]');
+  ok(await waitFor(off, () => /안 셈으로 되돌림/.test(document.querySelector('.item .state').textContent), null, 6000), '숫자판 지움 → 안 셈으로 되돌림');
+  await off.tap('button.qty[data-pad]'); await off.tap('[data-pk="7"]'); await off.tap('[data-pad-ok]');
+  await sleep(1200);
+  await shot(off, 'w8_office_count');
+  const deny7 = await off.evaluate(() => window.__fdb('write', { uid: 'anon-off', path: 'inv_counts/x7', data: { round: '2026-11', part: '창고', item: 'o1', qty: 3, by: '김가', at: { __server: 1 }, clientAt: { __ts: 1 }, uid: 'anon-off' } }));
+  ok(deny7 && deny7.denied, '없는 구분(창고) 거절');
+  await adm.click('[data-tab=prog]');
+  ok(await waitFor(adm, () => /사무실 재고조사/.test(document.body.innerText) && /입력한 사람: .*김가/.test(document.body.innerText), null, 5000), '관리자 진행 현황에 사무실 카드');
+  await adm.click('[data-tab=office]'); await sleep(300);
+  ok(/사무실 재고조사/.test(await text(adm)) && /이름 : 김가/.test(await text(adm)) && /부서 : 객실팀 사무실/.test(await text(adm)), '사무실 조사표: 제목 · 이름 · 부서');
+  await shot(adm, 'a7_office');
+  dl = adm.waitForEvent('download'); await adm.click('[data-xls=office]'); dl = await dl;
+  const f4 = path.join(OUT, dl.suggestedFilename()); await dl.saveAs(f4);
+  ok(/사무실 재고조사\.xlsx$/.test(dl.suggestedFilename()), '사무실 조사표 엑셀: ' + dl.suggestedFilename());
+  await adm.evaluate(() => { const p = document.getElementById('print'); p.innerHTML = document.querySelector('.pscale').innerHTML; document.body.classList.add('printing'); });
+  await adm.emulateMedia({ media: 'print' });
+  await adm.pdf({ path: path.join(OUT, '사무실_재고조사_시험.pdf'), format: 'A4', printBackground: true, margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' } });
+  await adm.emulateMedia({ media: 'screen' }); await adm.evaluate(() => { document.body.classList.remove('printing'); document.getElementById('print').innerHTML = ''; });
+
   console.log('8. 마감 → 근무자 저장 막힘(빨간 띠) → 다음 달 전월이월');
   await adm.click('[data-tab=prog]'); await sleep(200);
   await adm.click('[data-close-round]'); await adm.click('[data-close-round]');
@@ -251,7 +295,7 @@ const text = p => p.evaluate(() => document.body.innerText);
   ok(dec1[2] === '20' && /입고 완료/.test(dec1[3]), '12월 당월입고 = 11월 구매 20 (입고 완료)');
 
   console.log('9. 화면 오류 · 넓이');
-  for (const p of [adm, hm, sn]) ok(p.errs.length === 0, p === adm ? '관리자' : p === hm ? '하우스맨' : '사우나' + ' 화면 오류 0건' + (p.errs.length ? ' ' + p.errs.join(' | ') : ''));
+  for (const [p, n] of [[adm, '관리자'], [hm, '하우스맨'], [sn, '사우나'], [off, '사무실(터치)']]) ok(p.errs.length === 0, n + ' 화면 오류 0건' + (p.errs.length ? ' ' + p.errs.join(' | ') : ''));
   const wide = await hm.evaluate(() => document.documentElement.scrollWidth <= 360);
   ok(wide, '360px 에서 가로로 넘치지 않음');
   const errDocs = [...db.docs.keys()].filter(k => k.startsWith('inv_errors/'));
