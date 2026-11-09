@@ -4,9 +4,9 @@ rules_version = '2';
 //   v6 2026-11-07: 2인 1조(부부 메이드) — meta/teams.mate 에 짝으로 적힌 메이드는 짝의 배정·기록·변경·공지 확인을 같이 읽고 씀,
 //   v7 2026-11-07: 고객만족도 VOC voc/{id} — 관리자(소장·부소장·봇)만 읽고 씀 (메이드 실적 비공개). 그 밖은 v6 와 같음,
 //   v8 2026-11-07: 재고조사 inv_* 추가 (부소장 Claude, haeundae-rm/inventory). 그 밖은 v7 와 한 글자도 같음,
-//   v9 2026-11-07: 재고조사 기록 qty 에 null(지움 = 안 셈으로 되돌림) 허용. 그 밖은 v8 와 한 글자도 같음,
-//   v10 2026-11-09: 재고조사 구분에 '사무실' 추가 (객실 · 사우나 · 사무실). 그 밖은 v9 와 한 글자도 같음,
-//   v11 2026-11-09: 가구 보수 이력 inv_repairs 추가 (근무자는 '접수' 줄 만들기만, 완료·고치기·지우기는 관리자). 그 밖은 v10 와 한 글자도 같음)
+//   v9 2026-11-08: 객실 활동판 — 점검 항목 t(번호 목록, 이상일 때만) 허용 · 지난 날짜(서울)에 체크된 객실은 정비보조가 못 바꿈. 그 밖은 v8 와 같음,
+//   v10 2026-11-08: 객실 활동판 — 관리자 '지금까지 잠그기'(acts/{id}.lockAt) 이전에 체크된 객실은 정비보조가 못 바꿈. 그 밖은 v9 와 같음,
+//   v11 2026-11-09: 재고조사(부소장 Claude) — 기록 qty 에 null(지움 = 안 셈) 허용 · 구분에 '사무실' 추가 · 가구 보수 이력 inv_repairs 추가. 그 밖은 v10 와 한 글자도 같음)
 // 원칙: 메이드는 본인 이름으로 등록된 휴대폰에서 본인(과 2인 1조 짝) 기록만 쓰고, 본인(과 짝) 배정만 읽는다 (다른 메이드 배정 비노출)
 //       관리자(소장·부소장)와 봇(Apps Script 중계)은 전부 읽고 쓴다
 service cloud.firestore {
@@ -192,6 +192,7 @@ service cloud.firestore {
     // ---------- 정비 지원 객실 활동판 (v5, 2026-11-06 ⑧ 2부)
     // 활동 = acts/{활동ID} (만들기·수정·끝내기·보관은 소장·부소장·봇만), 객실 체크 = acts/{활동ID}/marks/{객실} (같은 객실은 덮어씀)
     // 정비보조: 진행 중인 활동에만, 본인 이름으로, 완료·이상·취소 (메모는 이상일 때만 30자). '관리자 대신'·지우기는 관리자만
+    // v9: 점검 항목 t = ['1','3'] 처럼 번호 목록(5개까지, 이상일 때만). 어제 이전에 완료·이상으로 체크된 객실은 정비보조가 못 바꿈 (관리자는 됨)
     match /acts/{id} {
       allow read: if signedIn();
       allow write: if isAdmin();
@@ -203,12 +204,27 @@ service cloud.firestore {
     }
     function validMark(id, room) {
       let d = request.resource.data;
-      return d.keys().hasOnly(['s', 'm', 'w', 'by', 'at', 'clientAt', 'uid'])
+      return d.keys().hasOnly(['s', 'm', 'w', 'by', 'at', 'clientAt', 'uid', 't'])
         && room.matches('^[0-9]{3,4}$')
+        && (!('t' in d) || (d.t is list && d.t.size() <= 5 && d.t.hasOnly(['1', '2', '3', '4', '5', '6', '7', '8', '9']) && (d.t.size() == 0 || d.s == '이상')))
+        && markOpen(id)
         && d.s in ['완료', '이상', '취소'] && str(d.m, 30) && (d.s == '이상' || d.m == '')
         && isName(d.w) && d.w != '관리자' && d.by == '본인'
         && d.at == request.time && d.clientAt is timestamp && d.uid == request.auth.uid
         && get(/databases/$(db)/documents/acts/$(id)).data.status == '진행';
+    }
+    // v9: 지금 문서가 없거나 · 취소였거나 · 오늘(서울) 체크한 것이면 바꿀 수 있음
+    // v10: 단, 관리자가 잠근 시각(lockAt) 이전에 체크된 것은 못 바꿈
+    function seoulDay(t) { return (t + duration.value(9, 'h')).date(); }
+    function markOpen(id) {
+      return resource == null
+        || resource.data.get('s', '') == '취소'
+        || !(resource.data.get('at', null) is timestamp)
+        || (seoulDay(resource.data.at) == seoulDay(request.time) && !adminLocked(id));
+    }
+    function adminLocked(id) {
+      let lk = get(/databases/$(db)/documents/acts/$(id)).data.get('lockAt', null);
+      return lk is timestamp && resource.data.at <= lk;
     }
     // ---------- 재고조사 (v8, 2026-11-07): haeundae-rm/inventory 앱. 컬렉션은 inv_ 로 시작하는 것만
     // 품목·회차·구매신청서는 관리자(소장·부소장·봇)만 씀. 근무자(하우스맨·사우나, 익명 로그인)는 진행 중인 회차에 '조사 한 줄 쌓기'만
@@ -233,9 +249,9 @@ service cloud.firestore {
       return signedIn()
         && d.keys().hasOnly(['round', 'part', 'item', 'qty', 'by', 'at', 'clientAt', 'uid'])
         && d.round is string && d.round.matches('^[0-9]{4}-[0-9]{2}$')
-        && d.part in ['객실', '사우나', '사무실']   // v10: 사무실 추가
+        && d.part in ['객실', '사우나', '사무실']   // v11: 사무실 추가
         && d.item is string && d.item.size() > 0 && d.item.size() <= 40
-        && (d.qty == null || (d.qty is int && d.qty >= 0 && d.qty <= 100000))   // v9: null = 지움(안 셈)
+        && (d.qty == null || (d.qty is int && d.qty >= 0 && d.qty <= 100000))   // v11: null = 지움(안 셈)
         && isName(d.by)
         && d.at == request.time && d.clientAt is timestamp && d.uid == request.auth.uid
         && exists(/databases/$(db)/documents/inv_rounds/$(d.round))

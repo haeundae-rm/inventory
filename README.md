@@ -15,7 +15,7 @@
 | `items.js` | 처음 품목 목록 · 창고 4곳 (관리자 '기본 품목 넣기' 때 한 번만 사용) |
 | `store.js` | Firestore 읽기·쓰기 한 곳 (정비 레포트 `app/store.js` 복사 + `patch`) |
 | `style.css` · `sw.js` · `manifest.json` · `version.json` · `icon-*.png` | 디자인 · 오프라인 열기 · 홈 화면 아이콘 · 새 버전 확인 |
-| `rules/firestore_v8.rules` | 보안 규칙 v8 = v7 + 재고 블록 (**콘솔에 게시하는 전체 파일**) |
+| `rules/firestore_v11.rules` | 보안 규칙 v11 = 소장 v10(콘솔 게시본) + 재고 3곳 (**콘솔에 게시하는 전체 파일** — 게시 전 콘솔 맨 위 버전이 v10 인지 확인) |
 | `test/` | 가짜 Firebase(규칙 포함) 시험 |
 
 ## 데이터
