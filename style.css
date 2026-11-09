@@ -250,3 +250,11 @@ table.t tr.open td{background:#FFF8F8}
 .item.flash{animation:flash 1.6s ease}
 @keyframes flash{0%,40%{box-shadow:0 0 0 4px #9EC5F0}100%{box-shadow:none}}
 .wadd{font-size:11px;font-weight:700;color:#8A4B12;margin-top:3px}
+.rgo{display:flex;gap:8px}.rgo .btn{flex:1}
+.sec small{font-weight:500;color:var(--muted);font-size:12px}
+.rrow .rinfo{min-width:0;flex:1}
+.rside{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.rbtns{display:flex;gap:6px}
+.rbtns .mini{min-height:36px;padding:6px 12px;font-size:14px}
+.rrow.mine{border-color:#C9D9EE}
+.rrow.editing{border-color:var(--accent);background:#F2F7FF}

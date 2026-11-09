@@ -7,7 +7,8 @@ rules_version = '2';
 //   v9 2026-11-08: 객실 활동판 — 점검 항목 t(번호 목록, 이상일 때만) 허용 · 지난 날짜(서울)에 체크된 객실은 정비보조가 못 바꿈. 그 밖은 v8 와 같음,
 //   v10 2026-11-08: 객실 활동판 — 관리자 '지금까지 잠그기'(acts/{id}.lockAt) 이전에 체크된 객실은 정비보조가 못 바꿈. 그 밖은 v9 와 같음,
 //   v11 2026-11-09: 재고조사(부소장 Claude) — 기록 qty 에 null(지움 = 안 셈) 허용 · 구분에 '사무실' 추가 · 가구 보수 이력 inv_repairs 추가. 그 밖은 v10 와 한 글자도 같음,
-//   v12 2026-11-09: 재고조사 — 근무자가 휴대폰에서 품목 '추가'만 할 수 있음 (inv_items 만들기, 고치기·지우기는 관리자). 그 밖은 v11 와 한 글자도 같음)
+//   v12 2026-11-09: 재고조사 — 근무자가 휴대폰에서 품목 '추가'만 할 수 있음 (inv_items 만들기, 고치기·지우기는 관리자)
+//                  · 가구 보수: 근무자는 같은 휴대폰으로 접수한 건을 '완료' 전까지 수정·삭제할 수 있음. 그 밖은 v11 와 한 글자도 같음)
 // 원칙: 메이드는 본인 이름으로 등록된 휴대폰에서 본인(과 2인 1조 짝) 기록만 쓰고, 본인(과 짝) 배정만 읽는다 (다른 메이드 배정 비노출)
 //       관리자(소장·부소장)와 봇(Apps Script 중계)은 전부 읽고 쓴다
 service cloud.firestore {
@@ -275,7 +276,11 @@ service cloud.firestore {
     match /inv_repairs/{id} {      // v11: 가구 보수 이력 — 날짜·호실·품목·수량·접수자·비고·입력자·상태(접수/완료)
       allow read: if signedIn();
       allow create: if isAdmin() || validRepair();
-      allow update, delete: if isAdmin();   // 완료 처리 · 되돌리기 · 삭제는 관리자만
+      allow update: if isAdmin() || (ownOpenRepair() && validRepair());   // v12: 본인 접수는 완료 전까지 고치기 (완료 처리는 관리자만)
+      allow delete: if isAdmin() || ownOpenRepair();                       // v12: 본인 접수는 완료 전까지 지우기
+    }
+    function ownOpenRepair() {
+      return signedIn() && resource.data.uid == request.auth.uid && resource.data.get('status', '') == '접수';
     }
     function validRepair() {
       let d = request.resource.data;

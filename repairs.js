@@ -10,7 +10,7 @@ export function setupRepairs(ctx) {
   const { S, esc, toast, report, seoulDate } = ctx;
   let list = [], ready = false, sub = null, err = '', retryT = 0;
   // 근무자 접수 칸
-  let f = blank(true);
+  let f = blank(true), editId = null;   // editId: 근무자가 고치는 중인 본인 접수 (11/9)
   function blank(all) { const o = { room: '', item: '', qty: 1, cush: [], memo: '' }; if (all || !f) { o.date = seoulDate(); o.by = '객실과'; } else { o.date = f.date; o.by = f.by; } return o; }
   // 관리자 보기
   let flt = { month: '', st: '', q: '' }, seeding = false, af = { date: seoulDate(), room: '', item: R_ITEMS[0], qty: 1, by: '객실과', memo: '' };
@@ -41,25 +41,30 @@ export function setupRepairs(ctx) {
   // =====================================================================
   // 근무자 휴대폰: 가구 보수 접수
   // =====================================================================
+  function histHtml() {
+    const hist = /^[0-9]{3,4}$/.test(f.room) ? (byRoom()[f.room] || []).filter(x => x.id !== editId) : [];
+    return hist.length ? '<div class="rhist">이 호실 이전 보수 <b>' + hist.length + '건</b> · ' + hist.slice(-3).reverse().map(x => md(x.date) + ' ' + esc(x.item)).join(' · ') + '</div>' : '';
+  }
   function worker(m, name) {
-    const hist = /^[0-9]{3,4}$/.test(f.room) ? (byRoom()[f.room] || []) : [];
     const recent = list.slice().reverse().slice(0, 8);
     const tg = (k, v, on, t) => '<button class="tg' + (on ? ' on' : '') + '" data-rf="' + k + '" data-v="' + esc(v) + '">' + esc(t || v) + '</button>';
     m.innerHTML =
       '<section class="card rform">' +
       '<div class="frow"><label class="l">날짜</label><input type="date" class="txt sm" data-rk="date" value="' + esc(f.date) + '"></div>' +
       '<div class="frow"><label class="l" for="rroom">호실</label><input id="rroom" class="txt big-in" data-rk="room" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="예: 1713" value="' + esc(f.room) + '"></div>' +
-      (hist.length ? '<div class="rhist">이 호실 이전 보수 <b>' + hist.length + '건</b> · ' + hist.slice(-3).reverse().map(x => md(x.date) + ' ' + esc(x.item)).join(' · ') + '</div>' : '') +
+      '<div id="rhist">' + histHtml() + '</div>' +
       '<label class="l">품목</label><div class="tgs g2">' + R_ITEMS.map(v => tg('item', v, f.item === v)).join('') + '</div>' +
       (f.item === '소파쿠션' ? '<label class="l">쿠션 번호 <small>(여러 개 고를 수 있어요)</small></label><div class="tgs g3">' + ['1', '2', '3'].map(v => tg('cush', v, f.cush.indexOf(v) >= 0, v + '번')).join('') + '</div>' : '') +
       '<label class="l">수량</label><div class="ctl rq"><button class="pm" data-rq="-1">−</button><div class="qty rqn num">' + f.qty + '</div><button class="pm" data-rq="1">＋</button><span class="u">개</span></div>' +
       '<label class="l">접수자</label><div class="tgs g2">' + R_BY.map(v => tg('by', v, f.by === v)).join('') + '</div>' +
       '<label class="l" for="rmemo">메모 <small>(없으면 비워 두세요)</small></label><input id="rmemo" class="txt" data-rk="memo" maxlength="60" placeholder="예: 등받이 흔들림" value="' + esc(f.memo) + '">' +
       '</section>' +
-      '<button class="btn" data-rsave="1">접수하기</button>' +
-      '<div class="sec">최근 접수</div>' +
-      (err ? errBox() : ready ? (recent.length ? recent.map(x => '<div class="rrow"><div><b>' + esc(x.room) + '호</b> · ' + esc(x.item) + ' ' + x.qty + '개' + (x.memo ? ' <small>(' + esc(x.memo) + ')</small>' : '') + '<div class="s">' + md(x.date) + ' · ' + esc(x.by) + (x.who ? ' · ' + esc(x.who) : '') + '</div></div>' +
-        (x.pending ? '<span class="pill">보내는 중</span>' : x.status === '완료' ? '<span class="pill ok">완료</span>' : '<span class="pill warn">접수</span>') + '</div>').join('') : '<div class="notice">아직 접수된 게 없어요.</div>')
+      (editId ? '<div class="rgo"><button class="btn" data-rsave="1">수정 저장</button><button class="btn ghost" data-rcancel="1">수정 취소</button></div>' : '<button class="btn" data-rsave="1">접수하기</button>') +
+      '<div class="sec">최근 접수 <small>— 내가 접수한 건은 완료 전까지 수정 · 삭제할 수 있어요</small></div>' +
+      (err ? errBox() : ready ? (recent.length ? recent.map(x => { const mine = canEdit(x);
+        return '<div class="rrow' + (mine ? ' mine' : '') + (editId === x.id ? ' editing' : '') + '"><div class="rinfo"><b>' + esc(x.room) + '호</b> · ' + esc(x.item) + ' ' + x.qty + '개' + (x.memo ? ' <small>(' + esc(x.memo) + ')</small>' : '') + '<div class="s">' + md(x.date) + ' · ' + esc(x.by) + (x.who ? ' · ' + esc(x.who) : '') + '</div></div>' +
+          '<div class="rside">' + (x.pending ? '<span class="pill">보내는 중</span>' : x.status === '완료' ? '<span class="pill ok">완료</span>' : '<span class="pill warn">접수</span>') +
+          (mine ? '<div class="rbtns"><button class="mini" data-redit="' + x.id + '">수정</button><button class="mini del" data-rdelw="' + x.id + '">삭제</button></div>' : '') + '</div></div>'; }).join('') : '<div class="notice">아직 접수된 게 없어요.</div>')
         : '<div class="notice">불러오는 중이에요…</div>');
   }
   function workerSave(name, user) {
@@ -67,6 +72,12 @@ export function setupRepairs(ctx) {
     if (!f.item) { toast('품목을 골라 주세요'); return; }
     if (!f.date) { toast('날짜를 골라 주세요'); return; }
     const d = { date: f.date, room: f.room, item: f.item, qty: f.qty, by: f.by, memo: memoOf(), who: name, status: '접수', at: S.SERVER_TIME, clientAt: new Date(), uid: user.uid };
+    if (editId) {   // 본인 접수 고치기 (완료 전) — 문서를 통째로 다시 씀
+      const id = editId, old = list.filter(x => x.id === id)[0];
+      if (!old || !canEdit(old)) { toast('이미 완료됐거나 지워진 접수예요'); editId = null; f = blank(false); ctx.redraw(); return; }
+      S.set('inv_repairs/' + id, d).then(() => toast(d.room + '호 수정됐어요')).catch(e => { toast('수정이 막혔어요: ' + ((e && e.code) || e)); report('보수 수정', (e && e.code || '') + ' ' + (e && e.message || e)); });
+      editId = null; f = blank(false); ctx.redraw(); return;
+    }
     const w = S.add('inv_repairs', d);
     w.done.then(() => toast(d.room + '호 ' + d.item + ' 접수됐어요')).catch(e => { toast('접수가 막혔어요: ' + ((e && e.code) || e)); report('보수 접수', (e && e.code || '') + ' ' + (e && e.message || e)); });
     toast('접수했어요 · 보내는 중…');
@@ -82,15 +93,32 @@ export function setupRepairs(ctx) {
     }
     if (d.rq) { f.qty = Math.max(1, Math.min(50, f.qty + (+d.rq))); keepInputs(); ctx.redraw(); return true; }
     if (d.rsave) { keepInputs(); workerSave(name, user); return true; }
+    if (d.redit) {
+      const x = list.filter(i => i.id === d.redit)[0]; if (!x || !canEdit(x)) return true;
+      const m = String(x.memo || '').match(/^([1-3](?:[.,][1-3])*)번?\s*(.*)$/);
+      f = { date: x.date, room: x.room, item: x.item, qty: x.qty, by: x.by, cush: m && x.item === '소파쿠션' ? m[1].split(/[.,]/) : [], memo: m && x.item === '소파쿠션' ? m[2] : (x.memo || '') };
+      editId = x.id; ctx.redraw(); window.scrollTo(0, 0); toast(x.room + '호 접수를 고치는 중이에요'); return true;
+    }
+    if (d.rcancel) { editId = null; f = blank(false); ctx.redraw(); return true; }
+    if (d.rdelw) {
+      const x = list.filter(i => i.id === d.rdelw)[0]; if (!x || !canEdit(x)) return true;
+      if (!t.dataset.sure) { t.dataset.sure = '1'; t.textContent = '정말 삭제?'; t.classList.add('sure'); setTimeout(() => { if (t.isConnected) { delete t.dataset.sure; t.textContent = '삭제'; t.classList.remove('sure'); } }, 4000); return true; }
+      if (editId === x.id) { editId = null; f = blank(false); }
+      S.del('inv_repairs/' + x.id).then(() => toast(x.room + '호 접수를 지웠어요')).catch(e => { toast('삭제가 막혔어요: ' + ((e && e.code) || e)); report('보수 삭제', (e && e.code || '') + ' ' + (e && e.message || e)); });
+      return true;
+    }
     return false;
   }
+  // 근무자가 고칠 수 있는 접수 = 이 휴대폰(같은 로그인)이 접수했고, 아직 '완료' 전
+  function canEdit(x) { const u = ctx.user(); return !!(u && x.uid === u.uid && x.status !== '완료' && !x.pending && x.who !== '이전 기록'); }
   // 다시 그리기 전에 적던 칸 값을 챙김
   // 칸 값은 숫자만 4자리까지 — maxlength 대신 (일부 휴대폰 키보드에서 마지막 자리가 빠지는 문제, 11/9)
   const roomOf = v => String(v || '').replace(/[^0-9]/g, '').slice(0, 4);
   function keepInputs() { document.querySelectorAll('[data-rk]').forEach(i => { const k = i.dataset.rk; f[k] = k === 'room' ? roomOf(i.value) : i.value; }); }
   function workerChange(i) {
     if (!i.dataset.rk) return false;
-    keepInputs(); if (i.dataset.rk === 'room') ctx.redraw();
+    // 화면 전체를 다시 그리지 않음 — 칸에서 나오며 바로 누른 버튼(품목 등)이 씹히지 않게 (11/9)
+    keepInputs(); if (i.dataset.rk === 'room') { i.value = f.room; const h = document.getElementById('rhist'); if (h) h.innerHTML = histHtml(); }
     return true;
   }
 

@@ -56,9 +56,13 @@ function makeDb() {
     if (c === 'inv_rounds' || c === 'inv_buy') return isAdmin(uid);
     if (c === 'inv_counts') return exists ? isAdmin(uid) : (isAdmin(uid) || validInvCount(incoming, uid));
     if (c === 'inv_errors') return !exists && validErr(incoming, uid);
-    if (c === 'inv_repairs') return exists ? isAdmin(uid) : (isAdmin(uid) || validRepair(incoming, uid));   // v11
+    if (c === 'inv_repairs') {   // v11 + v12(본인 접수는 완료 전까지 고치기)
+      if (!exists) return isAdmin(uid) || validRepair(incoming, uid);
+      return isAdmin(uid) || (ownOpen(docs.get(path), uid) && validRepair(incoming, uid));
+    }
     return false;   // 그 밖은 막힘
   }
+  const ownOpen = (cur, uid) => !!cur && signedIn(uid) && cur.uid === uid && cur.status === '접수';
   function canRead(c, uid) {
     if (c === 'inv_repairs' && flags.denyRepairs) return false;
     if (c === 'inv_buy' || c === 'inv_errors') return isAdmin(uid);
@@ -91,7 +95,11 @@ function makeDb() {
       docs.set(a.path, stamp(incoming, Date.now()));
       return { ok: true };
     }
-    if (op === 'del') { if (!isAdmin(uid)) return { denied: true }; docs.delete(a.path); return { ok: true }; }
+    if (op === 'del') {
+      const ok = isAdmin(uid) || (a.path.startsWith('inv_repairs/') && ownOpen(docs.get(a.path), uid));   // v12
+      log.push({ path: a.path, uid, ok, del: true });
+      if (!ok) return { denied: true }; docs.delete(a.path); return { ok: true };
+    }
     throw new Error('op? ' + op);
   }
   return { call, docs, log, sessions, PW, flags };
