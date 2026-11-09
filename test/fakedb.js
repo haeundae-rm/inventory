@@ -1,4 +1,4 @@
-// fakedb.js — 시험용 메모리 Firestore + 보안 규칙 v10 의 inv_* 블록을 JS 로 그대로 옮긴 검사
+// fakedb.js — 시험용 메모리 Firestore + 보안 규칙 v11 의 inv_* 블록을 JS 로 그대로 옮긴 검사
 // (규칙에 막히는 쓰기는 시험에서도 막힘). Node 쪽에서 돌고, 휴대폰(브라우저 창)들은 window.__fdb 로 부름
 const ADMINS = ['wytSL9o4vvN4U2G3z6R64hafC9t2', 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', 'iw2orXgIgPgTbLUQa0b41XJ9Dvd2'];
 const EMAILS = { 'unieshaeundae+sub@gmail.com': 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', 'unieshaeundae+admin@gmail.com': 'iw2orXgIgPgTbLUQa0b41XJ9Dvd2' };
@@ -28,6 +28,16 @@ function makeDb() {
       && isServer(d.at) && isTs(d.clientAt) && d.uid === uid
       && !!r && r.status === '진행';
   }
+  function validRepair(d, uid) {
+    return signedIn(uid) && hasOnly(d, ['date', 'room', 'item', 'qty', 'by', 'memo', 'who', 'status', 'at', 'clientAt', 'uid'])
+      && typeof d.date === 'string' && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(d.date)
+      && typeof d.room === 'string' && /^[0-9]{3,4}$/.test(d.room)
+      && typeof d.item === 'string' && d.item.length > 0 && d.item.length <= 30
+      && Number.isInteger(d.qty) && d.qty >= 1 && d.qty <= 50
+      && typeof d.by === 'string' && d.by.length > 0 && d.by.length <= 20
+      && str(d.memo, 100) && isName(d.who) && d.status === '접수'
+      && isServer(d.at) && isTs(d.clientAt) && d.uid === uid;
+  }
   function validErr(d, uid) {
     return signedIn(uid) && hasOnly(d, ['at', 'day', 'uid', 'name', 'ver', 'where', 'msg', 'ua']) && d.uid === uid && isServer(d.at)
       && typeof d.day === 'string' && d.day.length === 10 && str(d.msg, 500) && str(d.where, 40) && str(d.name, 20) && str(d.ver, 20) && str(d.ua, 200);
@@ -38,11 +48,12 @@ function makeDb() {
     if (c === 'inv_items' || c === 'inv_rounds' || c === 'inv_buy') return isAdmin(uid);
     if (c === 'inv_counts') return exists ? isAdmin(uid) : (isAdmin(uid) || validInvCount(incoming, uid));
     if (c === 'inv_errors') return !exists && validErr(incoming, uid);
+    if (c === 'inv_repairs') return exists ? isAdmin(uid) : (isAdmin(uid) || validRepair(incoming, uid));   // v11
     return false;   // 그 밖은 막힘
   }
   function canRead(c, uid) {
     if (c === 'inv_buy' || c === 'inv_errors') return isAdmin(uid);
-    if (['inv_items', 'inv_rounds', 'inv_counts'].includes(c)) return signedIn(uid);
+    if (['inv_items', 'inv_rounds', 'inv_counts', 'inv_repairs'].includes(c)) return signedIn(uid);
     return false;
   }
   const out = (path, data) => ({ path, data });

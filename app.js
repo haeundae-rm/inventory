@@ -3,8 +3,9 @@
 import * as S from './store.js';
 import { WAREHOUSES, SAUNA_GROUPS } from './items.js';
 import { setupAdmin } from './admin.js';
+import { setupRepairs } from './repairs.js';
 
-const APP_VER = '2026.11.09-2';
+const APP_VER = '2026.11.09-3';
 const PARTS = ['객실', '사우나', '사무실'];   // 사무실: 11/9 신설 (품목은 관리자가 '품목 · 창고'에서 넣음)
 // 관리자 = 보안 규칙 isAdmin 과 같은 목록 (UID 는 공개돼도 되는 값)
 const ADMINS = [
@@ -65,6 +66,7 @@ S.onUser(u => {
   const lost = e => { report('읽기', (e && e.code || '') + ' ' + (e && e.message || e)); };
   subs.push(S.listenQuery('inv_items', null, docs => { items = docs.map(d => Object.assign({ id: d.id }, d.data)); itemsReady = true; update(); }, lost));
   subs.push(S.listenQuery('inv_rounds', null, docs => { rounds = docs.map(d => Object.assign({ id: d.id }, d.data)); roundsReady = true; update(); }, lost));
+  REP.stop(); REP.start();
   if (isAdm) ADM.start(); else ADM.stop();
   update();
 });
@@ -123,6 +125,7 @@ function render() {
   const r = openRound();
   let back = '', title = '재고조사', sub = r ? r.title : '';
   if (screen === 'wh') { back = 'home'; title = '객실 재고조사'; }
+  if (screen === 'repair') { back = 'home'; title = '가구 보수 접수'; sub = name || ''; }
   if (screen === 'count') { back = part === '객실' ? 'wh' : 'home'; title = part === '객실' ? whName(wh) : part + ' 재고조사'; sub = (name || '') + (r ? ' · ' + r.title : ''); }
   $('#top').innerHTML = '<div class="top-row">' + (back ? '<button class="back" data-go="' + back + '">‹ 뒤로</button>' : '') + '<h1>' + esc(title) + '</h1></div>' +
     (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '<div class="sync" id="sync"></div>';
@@ -130,8 +133,9 @@ function render() {
   document.documentElement.style.setProperty('--top-h', $('#top').offsetHeight + 'px');
   const m = $('#main');
   if (!user || !itemsReady || !roundsReady) { m.innerHTML = '<div class="notice"><strong>불러오는 중이에요…</strong></div>'; return; }
-  if (!r) { m.innerHTML = '<div class="notice"><strong>지금 진행 중인 재고조사가 없어요.</strong><br>관리자가 이번 달 조사를 열면 여기에 나와요.</div>' + adminLink(); screen = 'home'; return; }
-  if (screen === 'home' || !part) return homeV(m);
+  if (screen === 'repair') return REP.worker(m, name);   // 가구 보수는 재고조사 회차와 상관없이 언제나
+  if (!r) { screen = 'home'; return homeV(m, null); }
+  if (screen === 'home' || !part) return homeV(m, r);
   if (screen === 'wh') return whV(m);
   if (screen === 'done') return doneV(m);
   countV(m);
@@ -140,13 +144,15 @@ function adminLink() { return '<button class="adminin" data-admin-in="1">' + (is
 function whName(id) { return (WAREHOUSES.filter(w => w.id === id)[0] || { name: '창고 미지정' }).name; }
 function whList() { const ids = WAREHOUSES.map(w => w.id); const extra = live('객실').some(x => ids.indexOf(x.wh) < 0); return extra ? WAREHOUSES.concat([{ id: '', name: '창고 미지정' }]) : WAREHOUSES; }
 const inWh = (x, id) => id ? x.wh === id : WAREHOUSES.every(w => w.id !== x.wh);
-function homeV(m) {
+function homeV(m, r) {
   const nR = live('객실').length, nS = live('사우나').length, nO = live('사무실').length;
+  const repair = '<button class="big repair" data-repair="1"><span class="t">가구 보수 접수</span><span class="d">소파쿠션 · 소파 본체 · 의자 — 고장 난 가구를 바로 접수</span></button>';
   m.innerHTML = '<section class="card"><label class="l" for="nm">이름</label><input class="txt" id="nm" maxlength="20" autocomplete="off" placeholder="이름을 적어 주세요" value="' + esc(name) + '"></section>' +
-    '<button class="big" data-part="객실"><span class="t">객실 재고조사</span><span class="d">하우스맨(키퍼) · 창고 ' + WAREHOUSES.length + '곳 · ' + nR + '개 품목</span></button>' +
+    (!r ? '<div class="notice"><strong>지금 진행 중인 재고조사가 없어요.</strong><br>관리자가 이번 달 조사를 열면 여기에 나와요.</div>' + repair + adminLink() : '') +
+    (!r ? '' : '<button class="big" data-part="객실"><span class="t">객실 재고조사</span><span class="d">하우스맨(키퍼) · 창고 ' + WAREHOUSES.length + '곳 · ' + nR + '개 품목</span></button>' +
     '<button class="big" data-part="사우나"><span class="t">사우나 재고조사</span><span class="d">사우나 근무자 · ' + nS + '개 품목</span></button>' +
-    (nO ? '<button class="big" data-part="사무실"><span class="t">사무실 재고조사</span><span class="d">사무실 · ' + nO + '개 품목</span></button>' : '') +
-    '<p class="hint">· 숫자 칸을 누르면 숫자판이 떠서 직접 입력할 수 있어요.<br>· 숫자를 넣으면 바로 휴대폰에 저장돼요.<br>· 인터넷이 끊겨도 괜찮아요. 연결되면 자동으로 보내요.</p>' + adminLink();
+    (nO ? '<button class="big" data-part="사무실"><span class="t">사무실 재고조사</span><span class="d">사무실 · ' + nO + '개 품목</span></button>' : '') + repair +
+    '<p class="hint">· 숫자 칸을 누르면 숫자판이 떠서 직접 입력할 수 있어요.<br>· 숫자를 넣으면 바로 휴대폰에 저장돼요.<br>· 인터넷이 끊겨도 괜찮아요. 연결되면 자동으로 보내요.</p>' + adminLink());
 }
 function prog(list) { return [list.filter(x => has(x.id)).length, list.length]; }
 function has(id) { const v = valOf(id); return v !== ''; }
@@ -303,6 +309,12 @@ document.addEventListener('click', e => {
   if (d.padOk) { padDone(false); return; }
   if (d.padNext) { padDone(true); return; }
   if (d.padX) { pad = null; drawDlg(); return; }
+  if (screen === 'repair' && REP.workerClick(t, name, user)) return;
+  if (d.repair) {
+    const n = ($('#nm') || {}).value; if (n !== undefined) name = n.trim().slice(0, 20);
+    if (!name) { toast('이름을 먼저 적어 주세요'); $('#nm').focus(); return; }
+    lsSet('inv_name', name); part = null; screen = 'repair'; render(); window.scrollTo(0, 0); return;
+  }
   if (d.part) {
     const n = ($('#nm') || {}).value; if (n !== undefined) name = n.trim().slice(0, 20);
     if (!name) { toast('이름을 먼저 적어 주세요'); $('#nm').focus(); return; }
@@ -330,6 +342,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const i = e.target;
   if (mode === 'admin' && isAdm) { ADM.change(i, e); return; }
+  if (screen === 'repair' && REP.workerChange(i)) return;
   if (i.matches('input.qty')) {
     const v = i.value.replace(/[^0-9]/g, '');
     setDraft(i.dataset.id, v === '' ? null : +v);   // 칸을 비우면 → 안 셈
@@ -362,12 +375,18 @@ window.addEventListener('error', e => report('화면', (e.message || '') + ' @' 
 window.addEventListener('unhandledrejection', e => report('화면', 'promise: ' + (e.reason && (e.reason.message || e.reason) || '')));
 
 // ---------- 관리자 화면 (admin.js)
+// ---------- 가구 보수 (repairs.js) — 근무자 접수 + 관리자 탭
+const REP = setupRepairs({
+  S, esc, toast, report, seoulDate, user: () => user,
+  who: () => (ADMINS.filter(a => user && a.uid === user.uid)[0] || {}).label || '',
+  redraw: () => { if (typing()) { renderLater = true; return; } const y = window.scrollY; render(); window.scrollTo(0, y); }
+});
 const ADM = setupAdmin({
   S, esc, toast, report, seoulDate, latest, sortItems, WAREHOUSES,
   items: () => items, rounds: () => rounds, user: () => user,
   who: () => (ADMINS.filter(a => user && a.uid === user.uid)[0] || {}).label || '',
   redraw: () => { if (mode === 'admin' && isAdm) { if (typing()) { renderLater = true; return; } const y = window.scrollY; render(); window.scrollTo(0, y); } },
-  ver: APP_VER
+  ver: APP_VER, rep: REP
 });
 
 // ---------- 연결 상태 · 새 버전

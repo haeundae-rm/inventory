@@ -3,7 +3,7 @@
 // 탭: 진행 현황 · 사우나 결산 · 사우나 구매신청서 · 객실 조사표 · 품목 · 창고 · 회차
 import { seedItems } from './items.js';
 
-const TABS = [['prog', '진행 현황'], ['settle', '사우나 결산'], ['buy', '사우나 구매신청서'], ['room', '객실 조사표'], ['office', '사무실 조사표'], ['items', '품목 · 창고'], ['rounds', '회차']];
+const TABS = [['prog', '진행 현황'], ['settle', '사우나 결산'], ['buy', '사우나 구매신청서'], ['room', '객실 조사표'], ['office', '사무실 조사표'], ['repair', '가구 보수'], ['items', '품목 · 창고'], ['rounds', '회차']];
 const ST = { g: '긴급', y: '입고 완료', r: '미입고' };
 const ST_FILL = { g: '92D050', y: 'FFF200', r: 'FF7B7B', gray: 'D9D9D9' };
 const EXCELJS = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
@@ -78,9 +78,9 @@ export function setupAdmin(ctx) {
       (rs.length ? '<select class="rsel" data-k="round" aria-label="회차">' + rs.map(x => '<option value="' + x.id + '"' + (r && x.id === r.id ? ' selected' : '') + '>' + esc(x.title) + ' · ' + x.status + '</option>').join('') + '</select>' : '') +
       '<span class="who">' + esc(ctx.who()) + '</span><button class="lnk" data-to-worker="1">근무자 화면</button><button class="lnk" data-admin-in="1">로그아웃</button></div>' +
       '<nav class="tabs">' + TABS.map(([k, n]) => '<button data-tab="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + n + '</button>').join('') + '</nav></header>';
-    if (!items().length && tab !== 'items') h += '<div class="band err"><b>품목이 아직 없어요.</b> \'품목 · 창고\' 탭에서 기본 품목을 넣어 주세요.<button data-tab="items">가기</button></div>';
-    else if (!r && tab !== 'rounds' && tab !== 'items') h += '<div class="band err"><b>재고조사 회차가 없어요.</b> \'회차\' 탭에서 이번 달 조사를 열어 주세요.<button data-tab="rounds">가기</button></div>';
-    h += '<div class="pane">' + (({ prog, settle, buy, room, office, items: itemsT, rounds: roundsT })[tab])(r) + '</div><p class="ver">재고조사 앱 ' + ctx.ver + '</p>';
+    if (!items().length && tab !== 'items' && tab !== 'repair') h += '<div class="band err"><b>품목이 아직 없어요.</b> \'품목 · 창고\' 탭에서 기본 품목을 넣어 주세요.<button data-tab="items">가기</button></div>';
+    else if (!r && tab !== 'rounds' && tab !== 'items' && tab !== 'repair') h += '<div class="band err"><b>재고조사 회차가 없어요.</b> \'회차\' 탭에서 이번 달 조사를 열어 주세요.<button data-tab="rounds">가기</button></div>';
+    h += '<div class="pane">' + (({ prog, settle, buy, room, office, repair: () => ctx.rep.admin(), items: itemsT, rounds: roundsT })[tab])(r) + '</div><p class="ver">재고조사 앱 ' + ctx.ver + '</p>';
     const sc = main.querySelector('.scroll'), st = sc ? sc.scrollTop : 0;
     main.innerHTML = h;
     const s2 = main.querySelector('.scroll'); if (s2) s2.scrollTop = st;
@@ -229,6 +229,7 @@ export function setupAdmin(ctx) {
   const w = (p, ok) => p.then(() => { if (ok) toast(ok); }).catch(e => { toast('저장 실패: ' + ((e && e.code) || e)); report('관리자 저장', (e && e.code || '') + ' ' + (e && e.message || e)); });
   function click(t) {
     const d = t.dataset, r = round();
+    if (tab === 'repair' && !d.tab && ctx.rep.adminClick(t, { print, loadXl, box, fill, cellAll })) return;
     if (d.tab) { tab = d.tab; ctx.redraw(); window.scrollTo(0, 0); return; }
     if (d.pick) { sel = d.pick; tab = 'prog'; ctx.redraw(); window.scrollTo(0, 0); return; }
     if (d.seed) {
@@ -285,6 +286,7 @@ export function setupAdmin(ctx) {
   function num(v) { v = String(v).replace(/[^0-9]/g, ''); return v === '' ? null : Math.min(100000, +v); }
   function change(i) {
     const d = i.dataset, r = round();
+    if (tab === 'repair' && d.k !== 'round' && ctx.rep.adminChange(i)) return;
     if (d.k === 'round') { sel = i.value; ctx.redraw(); return; }
     if (d.k === 'ny' || d.k === 'nm') { newRound = { y: +document.querySelector('[data-k=ny]').value, m: +document.querySelector('[data-k=nm]').value }; ctx.redraw(); return; }
     if (d.k === 'carry' && r) { w(S.patch('inv_rounds/' + r.id, { carry: { [d.id]: num(i.value) } })); return; }

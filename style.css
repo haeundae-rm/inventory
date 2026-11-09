@@ -212,3 +212,34 @@ table.t select{font:500 14px var(--f-body);padding:5px;border:1.5px solid var(--
   #print .paper{width:auto;min-height:0;padding:0;box-shadow:none;transform:none}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+/* ---------- 가구 보수 (11/9) */
+.big.repair{border-color:#E7C9A6;background:#FFF8F0}
+.big.repair .t{color:#8A4B12}
+.rform{display:flex;flex-direction:column;gap:8px}
+.rform label.l{margin:6px 0 0}
+.rform label.l small{font-weight:500;color:var(--muted);font-size:13px}
+.frow{display:flex;align-items:center;gap:12px}
+.frow label.l{flex:0 0 44px;margin:0}
+.txt.sm{font-size:17px;padding:10px 12px}
+.txt.big-in{font:800 26px var(--f-num);letter-spacing:.06em;text-align:center}
+.rhist{background:#FFF4E5;border:1px solid #F3D3A7;color:#7A4A0E;border-radius:10px;padding:8px 12px;font-size:14px}
+.tgs{display:grid;gap:8px}.tgs.g2{grid-template-columns:1fr 1fr}.tgs.g3{grid-template-columns:1fr 1fr 1fr}
+.tg{min-height:52px;border:2px solid var(--line);background:#fff;border-radius:12px;font:700 16px var(--f-body);color:var(--ink);padding:6px}
+.tg.on{border-color:var(--navy);background:var(--navy);color:#fff}
+.ctl.rq{margin-top:0}
+.rqn{display:flex;align-items:center;justify-content:center}
+.rrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:15px}
+.rrow small{color:var(--muted)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media(max-width:900px){.grid3{grid-template-columns:1fr}}
+.lnk2{border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 9px;font:700 12px var(--f-body);color:var(--navy);margin:2px 0}
+.rep{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px;background:#FFF0D6;color:#8A4B12}
+table.t tr.open td{background:#FFF8F8}
+.mini.go{border-color:var(--done);color:var(--done)}
+.radd input[type=date],.radd select{font:600 14px var(--f-body);padding:7px;border:1.5px solid var(--line);border-radius:8px}
+.radd .btn{min-height:40px}
+.prp h1{font-size:26px;text-align:center;margin:0 0 16px;font-weight:900;border:2px solid #000;padding:8px 0;letter-spacing:.1em}
+.prp table{font-size:12px}.prp td{height:28px}.prp td.no{background:#F2F2F2;font-weight:700}
+@media print{ #print .paper + .paper{break-before:page} }
