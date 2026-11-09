@@ -245,3 +245,8 @@ table.t tr.open td{background:#FFF8F8}
 @media print{ #print .paper + .paper{break-before:page} }
 .err-box{border-color:#F2B8B5;background:var(--warn-soft);color:var(--warn)}
 .err-box strong{color:var(--warn)}
+.chip.add{margin-left:auto;border-color:var(--accent);color:var(--accent);background:#fff}
+.tgs.g4{grid-template-columns:repeat(4,1fr)}
+.item.flash{animation:flash 1.6s ease}
+@keyframes flash{0%,40%{box-shadow:0 0 0 4px #9EC5F0}100%{box-shadow:none}}
+.wadd{font-size:11px;font-weight:700;color:#8A4B12;margin-top:3px}

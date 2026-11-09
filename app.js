@@ -5,7 +5,7 @@ import { WAREHOUSES, SAUNA_GROUPS } from './items.js';
 import { setupAdmin } from './admin.js';
 import { setupRepairs } from './repairs.js';
 
-const APP_VER = '2026.11.09-4';
+const APP_VER = '2026.11.09-5';
 const PARTS = ['객실', '사우나', '사무실'];   // 사무실: 11/9 신설 (품목은 관리자가 '품목 · 창고'에서 넣음)
 // 관리자 = 보안 규칙 isAdmin 과 같은 목록 (UID 는 공개돼도 되는 값)
 const ADMINS = [
@@ -26,6 +26,7 @@ let failed = 0, dlg = null, busy = false, newVer = '', renderLater = false, subs
 // 휴대폰(손가락) = 숫자를 누르면 큰 숫자판이 뜸 (직접 입력, 11/9). PC(마우스) = 칸에 바로 타자
 const TOUCH = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
 let pad = null;   // { id, v: '12', fresh } — 숫자판
+let addDlg = null;   // { name, unit, err } — 근무자 '항목 추가' 창 (11/9)
 
 // ---------- 도구
 const $ = s => document.querySelector(s);
@@ -175,7 +176,8 @@ function countV(m) {
   else if (part === '사우나') SAUNA_GROUPS.forEach(([a, b, g]) => { const l = shown.filter(x => x.order >= a && x.order <= b); if (l.length) rows += '<div class="sec">' + g + '</div>' + l.map(itemV).join(''); });
   else rows = shown.map(itemV).join('');
   m.innerHTML = '<div class="stick"><div class="card head" id="head"></div>' +
-    '<div class="chips"><button class="chip ' + (filter === 'all' ? 'on' : '') + '" data-f="all">전체</button><button class="chip ' + (filter === 'left' ? 'on' : '') + '" data-f="left">안 센 것만</button></div></div>' +
+    '<div class="chips"><button class="chip ' + (filter === 'all' ? 'on' : '') + '" data-f="all">전체</button><button class="chip ' + (filter === 'left' ? 'on' : '') + '" data-f="left">안 센 것만</button>' +
+    '<button class="chip add" data-add-item="1">＋ 항목 추가</button></div></div>' +
     rows + (part === '객실' ? '<button class="btn" data-go="wh">창고 목록으로</button>' : '<button class="btn" data-finish="1">' + part + ' 조사 다 했어요</button>');
   drawHead();
 }
@@ -264,9 +266,35 @@ function drawPad(el) {
     '<div class="pad-go"><button class="btn ghost" data-pad-ok="1">확인</button>' + (last ? '' : '<button class="btn" data-pad-next="1">확인 · 다음 ▶</button>') + '</div>' +
     '<button class="pad-x" data-pad-x="1">닫기</button></div>';
 }
+// ---------- 근무자 '항목 추가' (11/9) — 지금 보는 조사(객실은 지금 창고)에 품목 하나 추가. 고치기·지우기는 관리자만
+const UNITS = { 객실: ['개', '장', '박스', '롤'], 사우나: ['EA', 'BOX', 'PKG', '개'], 사무실: ['개', '박스', '권', '자루'] };
+function drawAdd(el) {
+  const where = part === '객실' ? whName(wh) : part + ' 재고조사';
+  el.className = 'on';
+  el.innerHTML = '<div class="dlg"><h3>항목 추가</h3><p>' + esc(where) + ' 목록 맨 아래에 추가돼요.<br>이름 고치기·지우기는 관리자에게 말해 주세요.</p>' +
+    '<label class="l" for="ai-name">품목 이름</label><input class="txt" id="ai-name" maxlength="40" autocomplete="off" placeholder="예: 휴지통 내피(대)" value="' + esc(addDlg.name) + '">' +
+    '<label class="l">단위</label><div class="tgs g4">' + UNITS[part].map(u => '<button class="tg' + (addDlg.unit === u ? ' on' : '') + '" data-ai-unit="' + esc(u) + '">' + esc(u) + '</button>').join('') + '</div>' +
+    (addDlg.err ? '<p class="err">' + esc(addDlg.err) + '</p>' : '') +
+    '<button class="btn" data-ai-save="1">추가하기</button><button class="btn ghost" data-close="1">닫기</button></div>';
+  setTimeout(() => { const i = $('#ai-name'); if (i && !i.value) i.focus(); }, 50);
+}
+function saveAdd() {
+  const nm = (($('#ai-name') || {}).value || addDlg.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  addDlg.name = nm;
+  if (!nm) { addDlg.err = '품목 이름을 적어 주세요.'; drawDlg(); return; }
+  const same = items.filter(x => x.part === part && x.use !== false && x.name.replace(/\s/g, '') === nm.replace(/\s/g, ''))[0];
+  if (same) { addDlg.err = '이미 있는 품목이에요' + (part === '객실' && same.wh !== wh ? ' (' + whName(same.wh) + ')' : '') + '.'; drawDlg(); return; }
+  const order = items.filter(x => x.part === part).reduce((a, x) => Math.max(a, x.order || 0), 0) + 1;
+  const id = ({ 객실: 'r', 사우나: 's', 사무실: 'o' })[part] + 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const data = { part, order, name: nm, unit: addDlg.unit, wh: part === '객실' ? (wh || '') : '', code: '', memo: '', use: true, addBy: name, addAt: S.SERVER_TIME, addUid: user.uid };
+  S.set('inv_items/' + id, data).then(() => toast(nm + ' 추가됐어요')).catch(e => { toast('추가가 막혔어요: ' + errText(e)); report('항목 추가', (e && e.code || '') + ' ' + (e && e.message || e)); });
+  addDlg = null; drawDlg(); filter = 'all'; toast(nm + ' 추가했어요 · 숫자를 넣어 주세요');
+  setTimeout(() => { const el = document.getElementById('it-' + id); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); } }, 400);
+}
 function drawDlg() {
   const el = $('#sheet');
   if (pad) { drawPad(el); return; }
+  if (addDlg) { drawAdd(el); return; }
   if (!dlg) { el.innerHTML = ''; el.className = ''; return; }
   el.className = 'on';
   if (isAdm) {
@@ -292,14 +320,14 @@ function login() {
 // 누르기
 // =====================================================================
 document.addEventListener('click', e => {
-  const t = e.target.closest('button'); if (!t) { if (e.target.id === 'sheet') { dlg = null; pad = null; drawDlg(); } return; }
+  const t = e.target.closest('button'); if (!t) { if (e.target.id === 'sheet') { dlg = null; pad = null; addDlg = null; drawDlg(); } return; }
   const d = t.dataset;
   if (d.reload) { location.reload(); return; }
   if (d.xFailed) { failed = 0; drawBands(); return; }
   if (d.adminIn) { if (isAdm) { mode = 'admin'; lsSet('inv_mode', null); render(); window.scrollTo(0, 0); } else { dlg = { who: 0 }; drawDlg(); } return; }
   if (d.who) { dlg.who = +d.who; dlg.err = ''; drawDlg(); return; }
   if (d.login) { login(); return; }
-  if (d.close) { dlg = null; drawDlg(); return; }
+  if (d.close) { dlg = null; addDlg = null; drawDlg(); return; }
   if (d.admGo) { dlg = null; drawDlg(); mode = 'admin'; lsSet('inv_mode', null); render(); return; }
   if (d.logout) { dlg = null; drawDlg(); lsSet('inv_mode', null); mode = 'worker'; S.signOut(); return; }
   if (d.toWorker) { mode = 'worker'; lsSet('inv_mode', 'worker'); screen = 'home'; render(); window.scrollTo(0, 0); return; }
@@ -309,6 +337,9 @@ document.addEventListener('click', e => {
   if (d.padOk) { padDone(false); return; }
   if (d.padNext) { padDone(true); return; }
   if (d.padX) { pad = null; drawDlg(); return; }
+  if (d.addItem) { addDlg = { name: '', unit: UNITS[part][0], err: '' }; drawDlg(); return; }
+  if (d.aiUnit) { addDlg.name = ($('#ai-name') || {}).value || ''; addDlg.unit = d.aiUnit; addDlg.err = ''; drawDlg(); return; }
+  if (d.aiSave) { saveAdd(); return; }
   if (screen === 'repair' && REP.workerClick(t, name, user)) return;
   if (d.repair) {
     const n = ($('#nm') || {}).value; if (n !== undefined) name = n.trim().slice(0, 20);
@@ -356,6 +387,7 @@ document.addEventListener('keydown', e => {
     e.target.blur(); if (ins[k + 1]) ins[k + 1].focus();
   }
   if (e.key === 'Enter' && e.target.id === 'pw') login();
+  if (e.key === 'Enter' && e.target.id === 'ai-name') { e.preventDefault(); saveAdd(); }
 });
 document.addEventListener('focusout', () => { setTimeout(() => { if (renderLater && !typing()) { const y = window.scrollY; render(); window.scrollTo(0, y); } }, 0); });
 

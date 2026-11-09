@@ -194,7 +194,7 @@ export function setupAdmin(ctx) {
     const opt = v => WAREHOUSES.concat([{ id: SKIP, name: '미조사 (회색 · 안 셈)' }]).map(w => '<option value="' + w.id + '"' + (v === w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
     const all = p => sortItems(items().filter(x => x.part === p));
     const row = (x, i, L) => '<tr class="' + (x.use === false ? 'off' : x.wh === SKIP ? 'skip' : '') + '"><td class="n">' + (i + 1) + '</td>' +
-      '<td><input class="ti" data-k="iname" data-id="' + x.id + '" value="' + esc(x.name) + '" maxlength="40"></td>' +
+      '<td><input class="ti" data-k="iname" data-id="' + x.id + '" value="' + esc(x.name) + '" maxlength="40">' + (x.addBy ? '<div class="wadd">근무자 추가 · ' + esc(x.addBy) + '</div>' : '') + '</td>' +
       '<td><input class="ti u" data-k="iunit" data-id="' + x.id + '" value="' + esc(x.unit) + '" maxlength="8"></td>' +
       (x.part === '객실' ? '<td><select data-k="iwh" data-id="' + x.id + '">' + opt(x.wh) + (WAREHOUSES.some(w => w.id === x.wh) || x.wh === SKIP ? '' : '<option value="" selected>창고 미지정</option>') + '</select></td>'
         : '<td class="sm">' + esc(x.code || '') + '</td>') +

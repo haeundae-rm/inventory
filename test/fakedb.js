@@ -1,4 +1,4 @@
-// fakedb.js — 시험용 메모리 Firestore + 보안 규칙 v11 의 inv_* 블록을 JS 로 그대로 옮긴 검사
+// fakedb.js — 시험용 메모리 Firestore + 보안 규칙 v12 의 inv_* 블록을 JS 로 그대로 옮긴 검사
 // (규칙에 막히는 쓰기는 시험에서도 막힘). Node 쪽에서 돌고, 휴대폰(브라우저 창)들은 window.__fdb 로 부름
 const ADMINS = ['wytSL9o4vvN4U2G3z6R64hafC9t2', 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', 'iw2orXgIgPgTbLUQa0b41XJ9Dvd2'];
 const EMAILS = { 'unieshaeundae+sub@gmail.com': 'Fz4T5ZzIxShOdVkNpF9gzMmOLED2', 'unieshaeundae+admin@gmail.com': 'iw2orXgIgPgTbLUQa0b41XJ9Dvd2' };
@@ -38,6 +38,13 @@ function makeDb() {
       && str(d.memo, 100) && isName(d.who) && d.status === '접수'
       && isServer(d.at) && isTs(d.clientAt) && d.uid === uid;
   }
+  function validWorkerItem(id, d, uid) {   // v12
+    return signedIn(uid) && /^[rso]w[0-9a-z]{4,20}$/.test(id)
+      && hasOnly(d, ['part', 'order', 'name', 'unit', 'wh', 'code', 'memo', 'use', 'addBy', 'addAt', 'addUid'])
+      && ['객실', '사우나', '사무실'].includes(d.part) && Number.isInteger(d.order) && d.order >= 0 && d.order <= 10000
+      && typeof d.name === 'string' && d.name.length > 0 && d.name.length <= 40 && str(d.unit, 8) && str(d.wh, 10)
+      && d.code === '' && d.memo === '' && d.use === true && isName(d.addBy) && isServer(d.addAt) && d.addUid === uid;
+  }
   function validErr(d, uid) {
     return signedIn(uid) && hasOnly(d, ['at', 'day', 'uid', 'name', 'ver', 'where', 'msg', 'ua']) && d.uid === uid && isServer(d.at)
       && typeof d.day === 'string' && d.day.length === 10 && str(d.msg, 500) && str(d.where, 40) && str(d.name, 20) && str(d.ver, 20) && str(d.ua, 200);
@@ -45,7 +52,8 @@ function makeDb() {
   // 쓰기 허용? (Firestore 규칙과 같은 판단)
   function canWrite(path, incoming, uid, exists) {
     const [c] = path.split('/');
-    if (c === 'inv_items' || c === 'inv_rounds' || c === 'inv_buy') return isAdmin(uid);
+    if (c === 'inv_items') return isAdmin(uid) || (!exists && validWorkerItem(path.split('/')[1], incoming, uid));   // v12
+    if (c === 'inv_rounds' || c === 'inv_buy') return isAdmin(uid);
     if (c === 'inv_counts') return exists ? isAdmin(uid) : (isAdmin(uid) || validInvCount(incoming, uid));
     if (c === 'inv_errors') return !exists && validErr(incoming, uid);
     if (c === 'inv_repairs') return exists ? isAdmin(uid) : (isAdmin(uid) || validRepair(incoming, uid));   // v11

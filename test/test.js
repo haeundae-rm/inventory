@@ -366,6 +366,41 @@ const text = p => p.evaluate(() => document.body.innerText);
     ok(ws.getCell('A1').value === '가구 보수 이력 현황' && ws.getCell('B4').value === '2025-11-26' && ws.getCell('C129').value === '1713', '엑셀: 126줄 (첫 줄 2025-11-26, 마지막 1713)'); }
   await shot(adm, 'a11_repair');
 
+  console.log('7-5. (11/9) 근무자 휴대폰 \'＋ 항목 추가\'');
+  await off.tap('[data-go=home]'); await sleep(300); await off.tap('[data-part="사무실"]');
+  ok(await waitFor(off, () => !!document.querySelector('[data-add-item]') && document.querySelectorAll('.item').length === 2, null, 5000), '사무실 조사 화면 위에 \'＋ 항목 추가\' 버튼');
+  await off.tap('[data-add-item]');
+  ok(await waitFor(off, () => !!document.querySelector('#ai-name')), '항목 추가 창');
+  await off.fill('#ai-name', '볼펜'); await off.tap('[data-ai-save]');
+  ok(await waitFor(off, () => /이미 있는 품목/.test(document.body.innerText)), '같은 이름(볼펜) → "이미 있는 품목"');
+  await off.fill('#ai-name', '테이프'); await off.tap('[data-ai-unit="박스"]');
+  ok((await off.inputValue('#ai-name')) === '테이프', '단위 눌러도 적던 이름 그대로');
+  await shot(off, 'w11_add_item');
+  await off.tap('[data-ai-save]');
+  ok(await waitFor(off, () => !document.querySelector('#ai-name') && document.querySelectorAll('.item').length === 3 && /테이프/.test(document.body.innerText), null, 5000), '추가 → 목록 맨 아래 테이프 (3개)');
+  await sleep(1000);
+  const nw = [...db.docs.entries()].find(([k, d]) => k.startsWith('inv_items/') && d.name === '테이프');
+  ok(nw && nw[1].part === '사무실' && nw[1].unit === '박스' && nw[1].addBy === '김가' && /^inv_items\/ow/.test(nw[0]), '서버: 사무실 · 박스 · 근무자 김가 · ID ow…');
+  await off.tap('#it-' + nw[0].split('/')[1] + ' button.qty'); await off.tap('[data-pk="4"]'); await off.tap('[data-pad-ok]');
+  ok(await waitFor(off, id => /저장됨/.test(document.querySelector('#it-' + id + ' .state').textContent), nw[0].split('/')[1], 6000), '추가한 품목에 바로 숫자 4 저장');
+  await adm.click('[data-tab=items]'); await sleep(400);
+  ok(/근무자 추가 · 김가/.test(await text(adm)), '관리자 품목 표: "근무자 추가 · 김가"');
+  // 객실: 지금 창고에 추가
+  await hm.click('[data-go=wh]').catch(() => {}); await sleep(300); await hm.click('[data-wh=b4]'); await sleep(300);
+  const nB4 = await hm.evaluate(() => document.querySelectorAll('.item').length);
+  await hm.click('[data-add-item]'); await hm.fill('#ai-name', '세탁망'); await hm.press('#ai-name', 'Enter');
+  ok(await waitFor(hm, n => document.querySelectorAll('.item').length === n + 1 && /세탁망/.test(document.body.innerText), nB4, 5000), '객실 지하4층 창고에서 Enter → 그 창고에 세탁망 추가');
+  await sleep(800);
+  ok([...db.docs.values()].some(d => d.name === '세탁망' && d.part === '객실' && d.wh === 'b4' && d.unit === '개'), '서버: 객실 · b4 · 개');
+  // 권한
+  const dz1 = await off.evaluate(p => window.__fdb('write', { uid: 'anon-off', path: p, data: { name: '바꿈' }, merge: true }), nw[0]);
+  ok(dz1 && dz1.denied, '근무자 → 품목 이름 고치기 거절');
+  const dz2 = await off.evaluate(() => window.__fdb('write', { uid: 'anon-off', path: 'inv_items/r001x', data: { part: '객실', order: 1, name: 'x', unit: '개', wh: '', code: '', memo: '', use: true, addBy: '김가', addAt: { __server: 1 }, addUid: 'anon-off' } }));
+  ok(dz2 && dz2.denied, '근무자 → 근무자용 ID(…w…) 아니면 거절');
+  const dz3 = await off.evaluate(() => window.__fdb('write', { uid: 'anon-off', path: 'inv_items/owabcd12', data: { part: '객실', order: 1, name: 'x', unit: '개', wh: '', code: '', memo: '', use: false, addBy: '김가', addAt: { __server: 1 }, addUid: 'anon-off' } }));
+  ok(dz3 && dz3.denied, '근무자 → 숨김(use:false) 품목 만들기 거절');
+  await shot(adm, 'a12_items_worker_added');
+
   console.log('8. 마감 → 근무자 저장 막힘(빨간 띠) → 다음 달 전월이월');
   await adm.click('[data-tab=prog]'); await sleep(200);
   await adm.click('[data-close-round]'); await adm.click('[data-close-round]');
