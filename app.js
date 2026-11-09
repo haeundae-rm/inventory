@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { WAREHOUSES, SAUNA_GROUPS } from './items.js';
 import { setupAdmin } from './admin.js';
 
-const APP_VER = '2026.11.09-1';
+const APP_VER = '2026.11.09-2';
 const PARTS = ['객실', '사우나', '사무실'];   // 사무실: 11/9 신설 (품목은 관리자가 '품목 · 창고'에서 넣음)
 // 관리자 = 보안 규칙 isAdmin 과 같은 목록 (UID 는 공개돼도 되는 값)
 const ADMINS = [
@@ -44,7 +44,7 @@ function errText(e) {
   return (e && e.message) || String(e);
 }
 const sortItems = a => a.slice().sort((x, y) => (x.order || 0) - (y.order || 0) || String(x.id).localeCompare(String(y.id)));
-const live = p => sortItems(items.filter(x => x.part === p && x.use !== false));
+const live = p => sortItems(items.filter(x => x.part === p && x.use !== false && x.wh !== 'skip'));   // 'skip' = 미조사 (11/9) → 근무자 목록에서 뺌
 function openRound() { return rounds.filter(r => r.status === '진행').sort((a, b) => b.id.localeCompare(a.id))[0] || null; }
 // 같은 품목 기록이 여러 줄이면 마지막(누른 시각) 줄이 지금 값
 export function latest(docs) {

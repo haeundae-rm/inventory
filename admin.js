@@ -23,7 +23,9 @@ export function setupAdmin(ctx) {
   // ---------- 자료 도우미
   const items = () => ctx.items();
   const rounds = () => ctx.rounds().slice().sort((a, b) => b.id.localeCompare(a.id));
-  const live = p => sortItems(items().filter(x => x.part === p && x.use !== false));
+  const SKIP = 'skip';   // 창고 '미조사' (11/9): 이번에는 안 셈 → 근무자 목록·진행률에서 빠지고, 조사표에는 회색 줄로 남음
+  const liveAll = p => sortItems(items().filter(x => x.part === p && x.use !== false));
+  const live = p => liveAll(p).filter(x => x.wh !== SKIP);
   function round() {
     const rs = rounds();
     if (want && rs.some(r => r.id === want)) { sel = want; want = null; }   // 방금 연 회차 (서버에서 돌아오기 전에는 그대로 기다림)
@@ -164,10 +166,10 @@ export function setupAdmin(ctx) {
   function roomNames(r, p) { p = p || '객실'; const by = cntBy[p] ? Object.keys(cntBy[p]).filter(Boolean) : []; return by.join(', '); }
   function roomPaper(r, p) {
     p = p || '객실';
-    const L = live(p), per = Math.max(30, Math.ceil(L.length / 3));
+    const L = liveAll(p), per = Math.max(30, Math.ceil(L.length / 3));
     let rows = '';
-    for (let i = 0; i < per; i++) rows += '<tr>' + [i, i + per, i + per * 2].map(k => { const x = L[k];
-      return '<td class="c">' + (k + 1) + '</td><td>' + (x ? esc(x.name) : '') + '</td><td class="n">' + (x ? n0(qty(r, x.id)) : '') + '</td>'; }).join('') + '</tr>';
+    for (let i = 0; i < per; i++) rows += '<tr>' + [i, i + per, i + per * 2].map(k => { const x = L[k], sk = x && x.wh === SKIP ? ' class="skip"' : '';
+      return '<td class="c"' + (sk ? ' style="background:#D9D9D9"' : '') + '>' + (k + 1) + '</td><td' + sk + '>' + (x ? esc(x.name) : '') + '</td><td class="n' + (sk ? ' skip' : '') + '">' + (x ? (sk ? '<small>미조사</small>' : n0(qty(r, x.id))) : '') + '</td>'; }).join('') + '</tr>';
     return '<div class="paper pr"><h1>' + r.y + '년 ' + r.m + '월 ' + PAPER[p].title + '</h1><table><thead><tr>' + '<th style="width:30px">NO</th><th>품목</th><th style="width:58px">재고량</th>'.repeat(3) + '</tr></thead><tbody>' + rows + '</tbody></table>' +
       '<div class="sign">이름 : ' + esc(roomNames(r, p)) + '<span>부서 : ' + PAPER[p].dept + '</span><span>조사일 : ' + fmtDate(r.day) + '</span></div></div>';
   }
@@ -189,19 +191,21 @@ export function setupAdmin(ctx) {
   function itemsT() {
     if (!items().length) return '<div class="acard"><h2>품목이 아직 없어요</h2><div class="s">지금 쓰시는 양식의 품목(객실 ' + seedItems().filter(x => x.data.part === '객실').length + '개 · 사우나 ' + seedItems().filter(x => x.data.part === '사우나').length + '개)을 한 번에 넣어요.</div>' +
       '<div class="tools"><button class="btn" data-seed="1"' + (seeding ? ' disabled' : '') + '>' + (seeding ? '넣는 중…' : '기본 품목 넣기') + '</button></div></div>';
-    const opt = v => WAREHOUSES.map(w => '<option value="' + w.id + '"' + (v === w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
+    const opt = v => WAREHOUSES.concat([{ id: SKIP, name: '미조사 (회색 · 안 셈)' }]).map(w => '<option value="' + w.id + '"' + (v === w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
     const all = p => sortItems(items().filter(x => x.part === p));
-    const row = (x, i, L) => '<tr class="' + (x.use === false ? 'off' : '') + '"><td class="n">' + (i + 1) + '</td>' +
+    const row = (x, i, L) => '<tr class="' + (x.use === false ? 'off' : x.wh === SKIP ? 'skip' : '') + '"><td class="n">' + (i + 1) + '</td>' +
       '<td><input class="ti" data-k="iname" data-id="' + x.id + '" value="' + esc(x.name) + '" maxlength="40"></td>' +
       '<td><input class="ti u" data-k="iunit" data-id="' + x.id + '" value="' + esc(x.unit) + '" maxlength="8"></td>' +
-      (x.part === '객실' ? '<td><select data-k="iwh" data-id="' + x.id + '">' + opt(x.wh) + (WAREHOUSES.some(w => w.id === x.wh) ? '' : '<option value="" selected>창고 미지정</option>') + '</select></td>'
+      (x.part === '객실' ? '<td><select data-k="iwh" data-id="' + x.id + '">' + opt(x.wh) + (WAREHOUSES.some(w => w.id === x.wh) || x.wh === SKIP ? '' : '<option value="" selected>창고 미지정</option>') + '</select></td>'
         : '<td class="sm">' + esc(x.code || '') + '</td>') +
-      '<td class="c"><label class="chk"><input type="checkbox" data-k="iuse" data-id="' + x.id + '"' + (x.use === false ? '' : ' checked') + '> 사용</label></td>' +
+      '<td class="c">' + (x.use === false ? '<button class="mini" data-reuse="' + x.id + '">다시 사용</button>' : '<button class="mini del" data-del="' + x.id + '">삭제</button>') + '</td>' +
       '<td class="c nowrap"><button class="mv" data-mv="-1" data-id="' + x.id + '"' + (i ? '' : ' disabled') + '>▲</button><button class="mv" data-mv="1" data-id="' + x.id + '"' + (i < L.length - 1 ? '' : ' disabled') + '>▼</button></td></tr>';
-    const tbl = (p, h3) => { const L = all(p); return '<div class="acard"><h2>' + h3 + ' <small>' + L.filter(x => x.use !== false).length + '개 사용</small></h2>' +
-      '<div class="scroll"><table class="t"><thead><tr><th>순서</th><th>품목</th><th>단위</th><th>' + (p === '객실' ? '창고' : '자재코드') + '</th><th>사용</th><th>순서</th></tr></thead><tbody>' + L.map((x, i) => row(x, i, L)).join('') + '</tbody></table></div>' +
+    const tbl = (p, h3) => { const L = all(p), sk = L.filter(x => x.wh === SKIP && x.use !== false).length; return '<div class="acard"><h2>' + h3 + ' <small>' + L.filter(x => x.use !== false && x.wh !== SKIP).length + '개 조사' + (sk ? ' · 미조사 ' + sk + '개' : '') + '</small></h2>' +
+      '<div class="scroll"><table class="t"><thead><tr><th>순서</th><th>품목</th><th>단위</th><th>' + (p === '객실' ? '창고' : '자재코드') + '</th><th>삭제</th><th>순서</th></tr></thead><tbody>' + L.map((x, i) => row(x, i, L)).join('') + '</tbody></table></div>' +
       '<div class="tools"><input class="ti" id="new-' + p + '" placeholder="새 품목 이름" maxlength="40"><button class="btn ghost" data-add="' + p + '">' + p + ' 품목 추가</button></div></div>'; };
-    return '<div class="note">고친 내용은 칸에서 나오면 바로 저장되고 근무자 휴대폰에도 바로 반영돼요. 안 쓰는 품목은 지우지 말고 \'사용\'을 끄세요 (지난 기록이 남아요).</div>' +
+    return '<div class="note">고친 내용은 칸에서 나오면 바로 저장되고 근무자 휴대폰에도 바로 반영돼요.<br>' +
+      '· 객실 품목의 창고를 <b>\'미조사\'</b>로 바꾸면 근무자 목록에서 빠지고, 조사표에는 <b>회색 줄</b>로 남아요 (다시 창고를 고르면 원래대로).<br>' +
+      '· <b>삭제</b>는 품목을 목록과 조사표에서 완전히 지워요 (이미 센 숫자 기록은 남지만 표에는 안 나와요). 한 번 더 눌러야 지워져요.</div>' +
       '<div class="grid2">' + tbl('객실', '객실 품목') + tbl('사우나', '사우나 품목') + '</div>' + tbl('사무실', '사무실 품목');
   }
 
@@ -262,6 +266,13 @@ export function setupAdmin(ctx) {
       inp.value = '';
       return;
     }
+    if (d.del) {
+      const x = items().filter(i => i.id === d.del)[0]; if (!x) return;
+      if (!t.dataset.sure) { t.dataset.sure = '1'; t.textContent = '정말 삭제?'; t.classList.add('sure'); setTimeout(() => { if (t.isConnected) { delete t.dataset.sure; t.textContent = '삭제'; t.classList.remove('sure'); } }, 4000); return; }
+      w(S.del('inv_items/' + x.id), x.name + ' 삭제했어요');
+      return;
+    }
+    if (d.reuse) { w(S.patch('inv_items/' + d.reuse, { use: true }), '다시 사용해요'); return; }
     if (d.mv) {
       const x = items().filter(i => i.id === d.id)[0]; if (!x) return;
       const L = sortItems(items().filter(i => i.part === x.part)), k = L.indexOf(x), o = L[k + (+d.mv)]; if (!o) return;
@@ -340,12 +351,13 @@ export function setupAdmin(ctx) {
         fname = '사우나 구매신청서 ' + (b.date || r.day) + '.xlsx';
       } else {
         const p = kind === 'office' ? '사무실' : '객실', T = PAPER[p];
-        const ws = wb.addWorksheet('재고조사'), L = live(p), per = Math.max(30, Math.ceil(L.length / 3));
+        const ws = wb.addWorksheet('재고조사'), L = liveAll(p), per = Math.max(30, Math.ceil(L.length / 3));
         ws.columns = [5, 20, 9, 5, 20, 9, 5, 20, 9].map(w => ({ width: w }));
         ws.mergeCells('A1:I1'); ws.getCell('A1').value = y + '년 ' + m + '월 ' + T.title; ws.getCell('A1').font = { bold: true, size: 16 }; ws.getCell('A1').alignment = { horizontal: 'center' }; ws.getRow(1).height = 30;
         ws.getRow(3).values = ['NO', '품목', '재고량', 'NO', '품목', '재고량', 'NO', '품목', '재고량'];
-        for (let i = 0; i < per; i++) { const v = []; [i, i + per, i + per * 2].forEach(k => { const x = L[k]; v.push(k + 1, x ? x.name : null, x && qty(r, x.id) !== undefined ? qty(r, x.id) : null); }); ws.getRow(4 + i).values = v; }
-        cellAll(ws, 3, 3 + per, 1, 9, (c, rr, cc) => { c.border = box; c.alignment = { horizontal: cc % 3 === 2 && rr > 3 ? 'left' : 'center', vertical: 'middle' }; if (rr === 3) { c.fill = fill('EDEDED'); c.font = { bold: true }; } });
+        for (let i = 0; i < per; i++) { const v = []; [i, i + per, i + per * 2].forEach(k => { const x = L[k]; v.push(k + 1, x ? x.name : null, x && x.wh === SKIP ? '미조사' : x && qty(r, x.id) !== undefined ? qty(r, x.id) : null); }); ws.getRow(4 + i).values = v; }
+        cellAll(ws, 3, 3 + per, 1, 9, (c, rr, cc) => { c.border = box; c.alignment = { horizontal: cc % 3 === 2 && rr > 3 ? 'left' : 'center', vertical: 'middle' }; if (rr === 3) { c.fill = fill('EDEDED'); c.font = { bold: true }; }
+          if (rr > 3) { const k = (rr - 4) + Math.floor((cc - 1) / 3) * per, x = L[k]; if (x && x.wh === SKIP) { c.fill = fill('D9D9D9'); c.font = { color: { argb: 'FF808080' } }; } } });
         const fr = 5 + per; ws.mergeCells('A' + fr + ':I' + fr); ws.getCell('A' + fr).value = '이름 : ' + roomNames(r, p) + '          부서 : ' + T.dept + '          조사일 : ' + fmtDate(r.day);
         ws.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
         fname = y + '년 ' + m + '월 ' + T.title + '.xlsx';

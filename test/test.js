@@ -272,6 +272,33 @@ const text = p => p.evaluate(() => document.body.innerText);
   await adm.pdf({ path: path.join(OUT, '사무실_재고조사_시험.pdf'), format: 'A4', printBackground: true, margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' } });
   await adm.emulateMedia({ media: 'screen' }); await adm.evaluate(() => { document.body.classList.remove('printing'); document.getElementById('print').innerHTML = ''; });
 
+  console.log('7-3. (11/9) 창고 \'미조사\' → 회색 · 품목 삭제');
+  await adm.click('[data-tab=items]'); await sleep(300);
+  await adm.selectOption('select[data-k=iwh][data-id=r001]', 'skip');
+  ok(await waitFor(adm, () => document.querySelector('select[data-k=iwh][data-id=r001]').closest('tr').classList.contains('skip'), null, 5000), '관리자 품목 표: 미조사 줄 회색');
+  ok(/75개 조사 · 미조사 1개/.test(await text(adm)), '객실 품목: 75개 조사 · 미조사 1개');
+  await hm.click('[data-go=wh]').catch(() => {}); await sleep(300);
+  ok(await waitFor(hm, () => /1 \/ 44|\/ 44/.test(document.body.innerText.replace(/\s+/g, ' ')), null, 5000), '하우스맨 14층 창고 45 → 44개 (미조사 빠짐)');
+  await hm.click('[data-wh=w14]');
+  ok(await waitFor(hm, () => document.querySelectorAll('.item').length === 44 && !/전기포트/.test(document.body.innerText), null, 5000), '근무자 목록에 전기포트 없음');
+  await adm.click('[data-tab=room]'); await sleep(300);
+  ok(await adm.evaluate(() => [...document.querySelectorAll('.pr td.skip')].some(td => /전기포트/.test(td.textContent))), '객실 조사표: 전기포트 줄 회색 · 미조사');
+  await shot(adm, 'a8_room_skip');
+  dl = adm.waitForEvent('download'); await adm.click('[data-xls=room]'); dl = await dl;
+  const f5 = path.join(OUT, 'skip_' + dl.suggestedFilename()); await dl.saveAs(f5);
+  { const ExcelJS = require(path.join(path.dirname(EXCELJS), '..'));
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(f5); const ws = wb.worksheets[0];
+    ok(ws.getCell('B4').value === '전기포트' && ws.getCell('C4').value === '미조사' && ws.getCell('B4').fill.fgColor.argb === 'FFD9D9D9', '엑셀: 전기포트 미조사 · 회색'); }
+  await adm.click('[data-tab=items]'); await sleep(300);
+  const delBtn = adm.locator('tr', { has: adm.locator('input[value="테이프"]') }).locator('[data-del]');
+  await delBtn.click();
+  ok(/정말 삭제/.test(await delBtn.textContent()), '삭제 한 번 → "정말 삭제?"');
+  await delBtn.click();
+  ok(await waitFor(adm, () => document.querySelectorAll('input[data-k=iname]').length === 112, null, 5000), '두 번 누르면 삭제 (113 → 112)');
+  ok(await waitFor(off, () => document.querySelectorAll('.item').length === 2 && !/테이프/.test(document.body.innerText), null, 5000), '사무실 휴대폰에서도 테이프 사라짐');
+  await shot(adm, 'a9_items');
+  await adm.selectOption('select[data-k=iwh][data-id=r001]', 'w14'); await sleep(500);
+
   console.log('8. 마감 → 근무자 저장 막힘(빨간 띠) → 다음 달 전월이월');
   await adm.click('[data-tab=prog]'); await sleep(200);
   await adm.click('[data-close-round]'); await adm.click('[data-close-round]');
